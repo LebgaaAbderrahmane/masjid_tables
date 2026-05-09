@@ -371,7 +371,7 @@ export class App {
     if (!previewPage) return;
 
     previewPage.style.minHeight = 'auto';
-    previewPage.className = '';
+    previewPage.style.backgroundColor = 'white';
 
     previewPage.innerHTML = '';
 
@@ -394,6 +394,7 @@ export class App {
     const previewPage = document.getElementById('previewPage');
     if (previewPage) {
       previewPage.style.minHeight = '';
+      previewPage.style.backgroundColor = '';
     }
 
     this.renderPreview();
@@ -436,7 +437,7 @@ export class App {
         return;
       }
 
-      const canvas = await html2canvas(page, { scale: 2 });
+      const canvas = await html2canvas(page, { scale: 1.2 });
       const imgData = canvas.toDataURL('image/png');
 
       const { jsPDF } = window.jspdf;
@@ -460,7 +461,7 @@ export class App {
         return;
       }
 
-      const canvas = await html2canvas(page, { scale: 2 });
+      const canvas = await html2canvas(page, { scale: 1.2 });
       const link = document.createElement('a');
       link.download = `${this.documentData?.header.title || 'document'}.png`;
       link.href = canvas.toDataURL('image/png');
@@ -504,8 +505,8 @@ export class App {
       try {
         const personRows = this.filterRowsForPerson(person);
         const html = this.renderIndividualProgram(person, personRows);
-        const pdfBlob = await this.generatePDFFromHTMLBlob(html);
-        zip.file(`${person}.pdf`, pdfBlob);
+        const imageBlob = await this.generateImageBlob(html);
+        zip.file(`${person}.png`, imageBlob);
       } catch (error) {
         console.error(`Failed to export for ${person}:`, error);
       }
@@ -531,8 +532,8 @@ export class App {
       try {
         const personRows = this.filterPrayerRowsForPerson(person);
         const html = this.renderPrayerIndividualProgram(person, personRows);
-        const pdfBlob = await this.generatePDFFromHTMLBlob(html);
-        zip.file(`${person}.pdf`, pdfBlob);
+        const imageBlob = await this.generateImageBlob(html);
+        zip.file(`${person}.png`, imageBlob);
       } catch (error) {
         console.error(`Failed to export for ${person}:`, error);
       }
@@ -541,6 +542,32 @@ export class App {
     const content = await zip.generateAsync({ type: 'blob' });
     this.downloadBlob(content, 'برامج_الأفراد.zip');
     alert(`تم تصدير ${personnelList.length} برنامج بنجاح`);
+  }
+
+  private async generateImageBlob(html: string): Promise<Blob> {
+    const tempDiv = document.createElement('div');
+    tempDiv.innerHTML = html;
+    tempDiv.style.position = 'absolute';
+    tempDiv.style.left = '-9999px';
+    tempDiv.style.width = '210mm';
+    document.body.appendChild(tempDiv);
+
+    const a4Page = tempDiv.querySelector('.a4-page') as HTMLElement;
+    a4Page.style.backgroundColor = 'white';
+
+    try {
+      const canvas = await html2canvas(a4Page, { scale: 2, useCORS: true, backgroundColor: '#ffffff' });
+      const dataUrl = canvas.toDataURL('image/jpeg', 0.9);
+      const base64 = dataUrl.split(',')[1];
+      const binaryString = atob(base64);
+      const bytes = new Uint8Array(binaryString.length);
+      for (let i = 0; i < binaryString.length; i++) {
+        bytes[i] = binaryString.charCodeAt(i);
+      }
+      return new Blob([bytes], { type: 'image/jpeg' });
+    } finally {
+      document.body.removeChild(tempDiv);
+    }
   }
 
   private extractCleaningPersonnel(): string[] {
@@ -716,33 +743,6 @@ export class App {
     }
 
     return parts.length > 0 ? parts.join('<br>') : '-';
-  }
-
-  private async generatePDFFromHTMLBlob(html: string): Promise<Blob> {
-    const tempDiv = document.createElement('div');
-    tempDiv.innerHTML = html;
-    tempDiv.style.position = 'absolute';
-    tempDiv.style.left = '-9999px';
-    tempDiv.style.width = '210mm';
-    document.body.appendChild(tempDiv);
-
-    try {
-      const canvas = await html2canvas(tempDiv.querySelector('.a4-page') as HTMLElement, { scale: 2 });
-      const imgData = canvas.toDataURL('image/png');
-      const { jsPDF } = window.jspdf;
-      const pdf = new jsPDF('p', 'mm', 'a4');
-      const pdfWidth = pdf.internal.pageSize.getWidth();
-      const pdfHeight = pdf.internal.pageSize.getHeight();
-
-      pdf.addImage(imgData, 'PNG', 0, 0, pdfWidth, pdfHeight);
-      const output = pdf.output('blob');
-      if (output instanceof Blob) {
-        return output;
-      }
-      return new Blob([output], { type: 'application/pdf' });
-    } finally {
-      document.body.removeChild(tempDiv);
-    }
   }
 
   private downloadBlob(blob: Blob, filename: string): void {
