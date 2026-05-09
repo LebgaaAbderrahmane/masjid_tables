@@ -14,6 +14,7 @@
   <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
   <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
   <script src="https://cdnjs.cloudflare.com/ajax/libs/PapaParse/5.4.1/papaparse.min.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
 </head>
 
 <body>
@@ -76,17 +77,23 @@
         <p class="import-hint">Supported formats: CSV, Excel (.xlsx, .xls)</p>
       </div>
 
+      <div class="members-section" id="membersSection">
+        <h3 style="margin-bottom: 15px; color: var(--primary);">الأفراد</h3>
+        <div class="members-list" id="membersList"></div>
+      </div>
+
       <div class="export-section">
         <h3 style="margin-bottom: 15px; color: var(--primary);">تصدير الوثيقة</h3>
         <div class="export-buttons">
           <button class="btn-export pdf" onclick="window.app.exportToPDF()">📄 تصدير كـ PDF</button>
           <button class="btn-export jpg" onclick="window.app.exportToImage()">🖼️ تصدير كصورة</button>
+          <button class="btn-export individual" onclick="window.app.exportIndividualPrograms()">👤 تصدير برامج الأفراد</button>
         </div>
       </div>
     </div>
 
     <div class="preview-panel">
-      <div class="a4-page" id="previewPage"></div>
+      <div id="previewPage"></div>
     </div>
   </div>
 

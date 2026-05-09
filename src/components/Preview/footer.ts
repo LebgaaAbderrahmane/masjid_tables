@@ -8,8 +8,10 @@ export function renderFooter(notes: FooterNote[]): string {
       ${notes.map(note => `
         <div class="footer-note">
           <h3>${escapeHtml(note.title)}</h3>
-          <p>${escapeHtml(note.content)}</p>
-          ${note.isVerse ? `<div class="verse">${escapeHtml(note.content)}</div>` : ''}
+          ${note.isVerse
+            ? `<div class="verse">${escapeHtml(note.content)}</div>`
+            : `<p>${escapeHtml(note.content)}</p>`
+          }
         </div>
       `).join('')}
     </div>

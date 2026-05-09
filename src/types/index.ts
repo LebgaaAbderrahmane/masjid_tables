@@ -28,6 +28,12 @@ export interface CleaningRow {
   tasks: string[];
 }
 
+export interface PersonnelTask {
+  day: string;
+  date: string;
+  tasks: string[];
+}
+
 export interface PrayerTimeSlot {
   imam: string;
   muezzin: string;

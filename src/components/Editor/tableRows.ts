@@ -69,7 +69,7 @@ export function renderTableRowsEditor(
             <input type="text" value="${escapeHtml(prayerRow.zuhr?.muezzin || '')}" oninput="window.app.updatePrayerSlot(${index}, 'zuhr', 'muezzin', this.value)">
           </div>
           <div class="form-group">
-            <label>العصر - Imam</label>
+            <label>العصر - الإمام</label>
             <input type="text" value="${escapeHtml(prayerRow.asr?.imam || '')}" oninput="window.app.updatePrayerSlot(${index}, 'asr', 'imam', this.value)">
           </div>
           <div class="form-group">

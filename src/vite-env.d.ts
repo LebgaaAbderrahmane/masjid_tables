@@ -15,6 +15,7 @@ declare const html2canvas: Html2Canvas;
 interface JsPDFDocument {
   addImage: (imageData: string, format: string, x: number, y: number, width: number, height: number) => void;
   save: (filename: string) => void;
+  output: (type: string, options?: unknown) => Blob | string;
   internal: {
     pageSize: {
       getWidth: () => number;
@@ -38,6 +39,10 @@ interface Window {
     };
   };
   Papa: {
-    parse: <T>(file: File, options: { complete: (results: { data: T[][] }) => void }) => void;
+    parse: <T>(file: File, options: { complete: (results: { data: T[][] }) => void; error?: (error: Error) => void }) => void;
+  };
+  JSZip: new () => {
+    file: (name: string, data: Blob | string) => void;
+    generateAsync: (options: { type: string }) => Promise<Blob>;
   };
 }

@@ -92,29 +92,38 @@ function renderPrayerTable(rows: PrayerRow[]): string {
               ${row.day ? `<div class="day">${escapeHtml(row.day)}</div>` : ''}
               ${row.date ? `<div class="date">${escapeHtml(row.date)}</div>` : ''}
             </td>
-            <td>${escapeHtml(row.opening)}</td>
+            <td>${renderMultipleNames(row.opening)}</td>
             <td>
               ${row.zuhr && (row.zuhr.imam || row.zuhr.muezzin) ? `
                 <div class="role-container">
-                  ${row.zuhr.imam ? `<div class="role-row imam-row"><span class="role-label">Imam:</span> ${escapeHtml(row.zuhr.imam)}</div>` : ''}
-                  ${row.zuhr.muezzin ? `<div class="role-row muezzin-row"><span class="role-label">المؤذن:</span> ${escapeHtml(row.zuhr.muezzin)}</div>` : ''}
+                  ${row.zuhr.imam ? `<div class="role-row imam-row ${row.zuhr.imam === 'المتوفر' ? 'unavailable' : ''}"><span class="role-label">الإمام:</span> ${escapeHtml(row.zuhr.imam)}</div>` : ''}
+                  ${row.zuhr.muezzin ? `<div class="role-row muezzin-row ${row.zuhr.muezzin === 'المتوفر' ? 'unavailable' : ''}"><span class="role-label">المؤذن:</span> ${escapeHtml(row.zuhr.muezzin)}</div>` : ''}
                 </div>
               ` : ''}
             </td>
             <td>
               ${row.asr && (row.asr.imam || row.asr.muezzin) ? `
                 <div class="role-container">
-                  ${row.asr.imam ? `<div class="role-row imam-row"><span class="role-label">Imam:</span> ${escapeHtml(row.asr.imam)}</div>` : ''}
-                  ${row.asr.muezzin ? `<div class="role-row muezzin-row"><span class="role-label">المؤذن:</span> ${escapeHtml(row.asr.muezzin)}</div>` : ''}
+                  ${row.asr.imam ? `<div class="role-row imam-row ${row.asr.imam === 'المتوفر' ? 'unavailable' : ''}"><span class="role-label">الإمام:</span> ${escapeHtml(row.asr.imam)}</div>` : ''}
+                  ${row.asr.muezzin ? `<div class="role-row muezzin-row ${row.asr.muezzin === 'المتوفر' ? 'unavailable' : ''}"><span class="role-label">المؤذن:</span> ${escapeHtml(row.asr.muezzin)}</div>` : ''}
                 </div>
               ` : ''}
             </td>
-            <td>${escapeHtml(row.closing)}</td>
+            <td>${renderMultipleNames(row.closing)}</td>
           </tr>
         `).join('')}
       </tbody>
     </table>
   `;
+}
+
+function renderMultipleNames(names: string): string {
+  if (!names) return '-';
+  const nameList = names.split(/\s+/).filter(n => n.trim());
+  return nameList.map(name => {
+    const isUnavailable = name === 'المتوفر';
+    return `<div class="${isUnavailable ? 'unavailable' : ''}">${escapeHtml(name)}</div>`;
+  }).join('');
 }
 
 function escapeHtml(str: string): string {

@@ -12,6 +12,7 @@ import { renderFooter } from './components/Preview/footer';
 export class App {
   private currentDocType: DocumentType | null = null;
   private documentData: DocumentData | null = null;
+  private selectedMember: string | null = null;
 
   constructor() {
     this.init();
@@ -301,6 +302,8 @@ export class App {
   private renderEditor(): void {
     if (!this.documentData || !this.currentDocType) return;
 
+    this.selectedMember = null;
+
     const headerSection = document.getElementById('headerSection');
     if (headerSection) {
       headerSection.innerHTML = renderHeaderEditor(this.documentData.header, () => this.renderPreview());
@@ -320,6 +323,80 @@ export class App {
     if (footerNotesEditor) {
       footerNotesEditor.innerHTML = renderFooterNotesEditor(this.documentData.footerNotes, () => this.renderPreview());
     }
+
+    this.renderMembersList();
+  }
+
+  private renderMembersList(): void {
+    const membersList = document.getElementById('membersList');
+    if (!membersList) return;
+
+    if (!this.documentData || !this.currentDocType) {
+      membersList.innerHTML = '';
+      return;
+    }
+
+    let personnel: string[] = [];
+    if (this.currentDocType === 'cleaning') {
+      personnel = this.extractCleaningPersonnel();
+    } else {
+      personnel = this.extractPrayerPersonnel();
+    }
+
+    if (personnel.length === 0) {
+      membersList.innerHTML = '<p style="color: #888; font-size: 13px;">لا يوجد أفراد</p>';
+      return;
+    }
+
+    let html = personnel.map(person => `
+      <div class="member-tag ${this.selectedMember === person ? 'active' : ''}" onclick="window.app.previewMember('${this.escapeHtml(person)}')">
+        ${this.escapeHtml(person)}
+      </div>
+    `).join('');
+
+    if (this.selectedMember) {
+      html += `<button class="btn-clear-preview" onclick="window.app.clearMemberPreview()">↺ العودة للوثيقة الكاملة</button>`;
+    }
+
+    membersList.innerHTML = html;
+  }
+
+  previewMember(personName: string): void {
+    if (!this.documentData || !this.currentDocType) return;
+
+    this.selectedMember = personName;
+    this.renderMembersList();
+
+    const previewPage = document.getElementById('previewPage');
+    if (!previewPage) return;
+
+    previewPage.style.minHeight = 'auto';
+    previewPage.className = '';
+
+    previewPage.innerHTML = '';
+
+    let html = '';
+    if (this.currentDocType === 'cleaning') {
+      const rows = this.filterRowsForPerson(personName);
+      html = this.renderIndividualProgram(personName, rows);
+    } else {
+      const rows = this.filterPrayerRowsForPerson(personName);
+      html = this.renderPrayerIndividualProgram(personName, rows);
+    }
+
+    previewPage.innerHTML = html;
+  }
+
+  clearMemberPreview(): void {
+    this.selectedMember = null;
+    this.renderMembersList();
+
+    const previewPage = document.getElementById('previewPage');
+    if (previewPage) {
+      previewPage.style.minHeight = '';
+    }
+
+    this.renderPreview();
   }
 
   private renderPreview(): void {
@@ -327,6 +404,13 @@ export class App {
 
     const page = document.getElementById('previewPage');
     if (!page) return;
+
+    if (this.selectedMember) {
+      return;
+    }
+
+    page.style.minHeight = '';
+    page.className = 'a4-page';
 
     let html = renderDocHeader(this.documentData.header);
     html += renderInfoBox(this.currentDocType, this.documentData.infoBox);
@@ -345,30 +429,328 @@ export class App {
   }
 
   async exportToPDF(): Promise<void> {
-    const page = document.getElementById('previewPage');
-    if (!page) return;
+    try {
+      const page = document.getElementById('previewPage');
+      if (!page) {
+        alert('لم يتم العثور على الصفحة');
+        return;
+      }
 
-    const canvas = await html2canvas(page, { scale: 2 });
-    const imgData = canvas.toDataURL('image/png');
+      const canvas = await html2canvas(page, { scale: 2 });
+      const imgData = canvas.toDataURL('image/png');
 
-    const { jsPDF } = window.jspdf;
-    const pdf = new jsPDF('p', 'mm', 'a4');
-    const pdfWidth = pdf.internal.pageSize.getWidth();
-    const pdfHeight = pdf.internal.pageSize.getHeight();
+      const { jsPDF } = window.jspdf;
+      const pdf = new jsPDF('p', 'mm', 'a4');
+      const pdfWidth = pdf.internal.pageSize.getWidth();
+      const pdfHeight = pdf.internal.pageSize.getHeight();
 
-    pdf.addImage(imgData, 'PNG', 0, 0, pdfWidth, pdfHeight);
-    pdf.save(`${this.documentData?.header.title || 'document'}.pdf`);
+      pdf.addImage(imgData, 'PNG', 0, 0, pdfWidth, pdfHeight);
+      pdf.save(`${this.documentData?.header.title || 'document'}.pdf`);
+    } catch (error) {
+      alert('فشل تصدير PDF. يرجى المحاولة مرة أخرى.');
+      console.error('PDF export error:', error);
+    }
   }
 
   async exportToImage(): Promise<void> {
-    const page = document.getElementById('previewPage');
-    if (!page) return;
+    try {
+      const page = document.getElementById('previewPage');
+      if (!page) {
+        alert('لم يتم العثور على الصفحة');
+        return;
+      }
 
-    const canvas = await html2canvas(page, { scale: 2 });
+      const canvas = await html2canvas(page, { scale: 2 });
+      const link = document.createElement('a');
+      link.download = `${this.documentData?.header.title || 'document'}.png`;
+      link.href = canvas.toDataURL('image/png');
+      link.click();
+    } catch (error) {
+      alert('فشل تصدير الصورة. يرجى المحاولة مرة أخرى.');
+      console.error('Image export error:', error);
+    }
+  }
+
+  async exportIndividualPrograms(): Promise<void> {
+    if (!this.documentData || !this.currentDocType) {
+      alert('الرجاء اختيار نوع الوثيقة أولاً');
+      return;
+    }
+
+    try {
+      if (this.currentDocType === 'cleaning') {
+        await this.exportCleaningIndividualPrograms();
+      } else {
+        await this.exportPrayerIndividualPrograms();
+      }
+    } catch (error) {
+      alert('حدث خطأ أثناء التصدير. يرجى المحاولة مرة أخرى.');
+      console.error('Individual export error:', error);
+    }
+  }
+
+  private async exportCleaningIndividualPrograms(): Promise<void> {
+    if (!this.documentData) return;
+
+    const personnelList = this.extractCleaningPersonnel();
+    if (personnelList.length === 0) {
+      alert('لا يوجد أشخاص في الجدول');
+      return;
+    }
+
+    const zip = new window.JSZip();
+
+    for (const person of personnelList) {
+      try {
+        const personRows = this.filterRowsForPerson(person);
+        const html = this.renderIndividualProgram(person, personRows);
+        const pdfBlob = await this.generatePDFFromHTMLBlob(html);
+        zip.file(`${person}.pdf`, pdfBlob);
+      } catch (error) {
+        console.error(`Failed to export for ${person}:`, error);
+      }
+    }
+
+    const content = await zip.generateAsync({ type: 'blob' });
+    this.downloadBlob(content, 'برامج_الأفراد.zip');
+    alert(`تم تصدير ${personnelList.length} برنامج بنجاح`);
+  }
+
+  private async exportPrayerIndividualPrograms(): Promise<void> {
+    if (!this.documentData) return;
+
+    const personnelList = this.extractPrayerPersonnel();
+    if (personnelList.length === 0) {
+      alert('لا يوجد أشخاص في الجدول');
+      return;
+    }
+
+    const zip = new window.JSZip();
+
+    for (const person of personnelList) {
+      try {
+        const personRows = this.filterPrayerRowsForPerson(person);
+        const html = this.renderPrayerIndividualProgram(person, personRows);
+        const pdfBlob = await this.generatePDFFromHTMLBlob(html);
+        zip.file(`${person}.pdf`, pdfBlob);
+      } catch (error) {
+        console.error(`Failed to export for ${person}:`, error);
+      }
+    }
+
+    const content = await zip.generateAsync({ type: 'blob' });
+    this.downloadBlob(content, 'برامج_الأفراد.zip');
+    alert(`تم تصدير ${personnelList.length} برنامج بنجاح`);
+  }
+
+  private extractCleaningPersonnel(): string[] {
+    if (!this.documentData) return [];
+
+    const personnelSet = new Set<string>();
+
+    for (const row of this.documentData.tableRows) {
+      const cleaningRow = row as CleaningRow;
+      for (const p of cleaningRow.personnel) {
+        const trimmed = p.trim();
+        if (trimmed && trimmed !== 'المتوفر' && trimmed !== '-') {
+          personnelSet.add(trimmed);
+        }
+      }
+    }
+
+    return Array.from(personnelSet).sort();
+  }
+
+  private extractPrayerPersonnel(): string[] {
+    if (!this.documentData) return [];
+
+    const personnelSet = new Set<string>();
+
+    for (const row of this.documentData.tableRows) {
+      const prayerRow = row as PrayerRow;
+
+      for (const name of prayerRow.opening.split(' ')) {
+        if (name.trim() && name.trim() !== 'المتوفر') {
+          personnelSet.add(name.trim());
+        }
+      }
+
+      if (prayerRow.zuhr.imam && prayerRow.zuhr.imam !== 'المتوفر') {
+        personnelSet.add(prayerRow.zuhr.imam);
+      }
+      if (prayerRow.zuhr.muezzin && prayerRow.zuhr.muezzin !== 'المتوفر') {
+        personnelSet.add(prayerRow.zuhr.muezzin);
+      }
+
+      if (prayerRow.asr.imam && prayerRow.asr.imam !== 'المتوفر') {
+        personnelSet.add(prayerRow.asr.imam);
+      }
+      if (prayerRow.asr.muezzin && prayerRow.asr.muezzin !== 'المتوفر') {
+        personnelSet.add(prayerRow.asr.muezzin);
+      }
+
+      for (const name of prayerRow.closing.split(' ')) {
+        if (name.trim() && name.trim() !== 'المتوفر') {
+          personnelSet.add(name.trim());
+        }
+      }
+    }
+
+    return Array.from(personnelSet).sort();
+  }
+
+  private filterRowsForPerson(personName: string): CleaningRow[] {
+    if (!this.documentData) return [];
+
+    return (this.documentData.tableRows as CleaningRow[])
+      .filter(row => row.personnel.includes(personName))
+      .map(row => ({
+        day: row.day,
+        date: row.date,
+        personnel: row.personnel,
+        tasks: row.tasks.filter(task => task.trim() !== '')
+      })) as CleaningRow[];
+  }
+
+  private filterPrayerRowsForPerson(personName: string): PrayerRow[] {
+    if (!this.documentData) return [];
+
+    return (this.documentData.tableRows as PrayerRow[])
+      .filter(row => {
+        const openingNames = row.opening.split(' ').map(n => n.trim());
+        const closingNames = row.closing.split(' ').map(n => n.trim());
+
+        return (
+          openingNames.includes(personName) ||
+          closingNames.includes(personName) ||
+          row.zuhr.imam === personName ||
+          row.zuhr.muezzin === personName ||
+          row.asr.imam === personName ||
+          row.asr.muezzin === personName
+        );
+      })
+      .map(row => ({
+        day: row.day,
+        date: row.date,
+        opening: row.opening,
+        zuhr: row.zuhr,
+        asr: row.asr,
+        closing: row.closing
+      }));
+  }
+
+  private renderPrayerIndividualProgram(personName: string, rows: PrayerRow[]): string {
+    if (!this.documentData) return '';
+    const header = this.documentData.header;
+
+    return `
+      <div class="a4-page">
+        <div class="doc-header">
+          <div class="doc-logo">
+            <svg width="50" height="50" viewBox="0 0 60 60" fill="none" xmlns="http://www.w3.org/2000/svg">
+              <rect width="60" height="60" rx="8" fill="#243245"/>
+              <path d="M42.7626 50.8839V54.9995H27.8633V29.8248C27.8633 25.9693 29.2212 22.3202 31.677 19.5207C33.0075 17.9981 34.5719 16.695 36.3558 15.6104C37.289 16.6258 38.1804 17.7237 38.9345 18.8764C37.3164 19.7952 35.9167 20.9205 34.764 22.251C32.9669 24.282 31.9789 26.9704 31.9789 29.8248V50.8839H42.7626Z" fill="#0DE9C3"/>
+              <path d="M44.6279 54.9999H40.5123V23.4434C40.5123 22.2179 40.208 21.033 39.6328 20.0175C37.053 15.4603 32.1961 11.581 30.0007 9.97362C27.8051 11.5846 22.9389 15.4735 20.3662 20.0175C19.791 21.033 19.4867 22.2179 19.4867 23.4434V54.9999H15.3711V23.4434C15.3711 21.5079 15.8603 19.6225 16.7839 17.9889C20.6561 11.1502 28.5401 5.95344 28.873 5.73506L29.9983 5L31.1236 5.73506C31.4577 5.95224 39.3405 11.1502 43.2127 17.9889C44.1375 19.6213 44.6255 21.5079 44.6255 23.4434V54.9999H44.6279Z" fill="white"/>
+            </svg>
+          </div>
+          <div class="doc-title">
+            <h1>${this.escapeHtml(header.title)} - ${this.escapeHtml(personName)}</h1>
+            <p>${this.escapeHtml(header.subtitle)}</p>
+          </div>
+          <div class="doc-version">${this.escapeHtml(header.version)}</div>
+        </div>
+        <div class="info-box">
+          <h2>جدول مهام ${this.escapeHtml(personName)}</h2>
+          <div class="info-items">
+            <div class="info-item"><span>عدد الأيام:</span><span>${rows.length}</span></div>
+          </div>
+        </div>
+        <table class="doc-table">
+          <thead>
+            <tr>
+              <th style="width: 12%">التاريخ</th>
+              <th style="width: 22%">الفتح</th>
+              <th style="width: 22%">الظهر</th>
+              <th style="width: 22%">العصر</th>
+              <th style="width: 22%">الغلق</th>
+            </tr>
+          </thead>
+          <tbody>
+            ${rows.map(row => `
+              <tr>
+                <td class="date-cell">
+                  ${row.day ? `<div class="day">${this.escapeHtml(row.day)}</div>` : ''}
+                  ${row.date ? `<div class="date">${this.escapeHtml(row.date)}</div>` : ''}
+                </td>
+                <td>${this.highlightPerson(row.opening, personName)}</td>
+                <td>${this.renderPrayerDuty(row.zuhr, personName)}</td>
+                <td>${this.renderPrayerDuty(row.asr, personName)}</td>
+                <td>${this.highlightPerson(row.closing, personName)}</td>
+              </tr>
+            `).join('')}
+          </tbody>
+        </table>
+      </div>
+    `;
+  }
+
+  private highlightPerson(cell: string, personName: string): string {
+    const names = cell.split(' ').map(n => n.trim()).filter(Boolean);
+    const isAssigned = names.includes(personName);
+    const displayHtml = names.length > 0 ? names.join('، ') : '-';
+    return isAssigned ? `<strong style="color: var(--primary);">${displayHtml}</strong>` : displayHtml;
+  }
+
+  private renderPrayerDuty(slot: { imam: string; muezzin: string }, personName: string): string {
+    const parts: string[] = [];
+    if (slot.imam === personName) {
+      parts.push(`<strong style="color: var(--primary);">الإمام: ${this.escapeHtml(slot.imam)}</strong>`);
+    } else if (slot.imam) {
+      parts.push(`الإمام: ${this.escapeHtml(slot.imam)}`);
+    }
+
+    if (slot.muezzin === personName) {
+      parts.push(`<strong style="color: var(--secondary);">المؤذن: ${this.escapeHtml(slot.muezzin)}</strong>`);
+    } else if (slot.muezzin) {
+      parts.push(`المؤذن: ${this.escapeHtml(slot.muezzin)}`);
+    }
+
+    return parts.length > 0 ? parts.join('<br>') : '-';
+  }
+
+  private async generatePDFFromHTMLBlob(html: string): Promise<Blob> {
+    const tempDiv = document.createElement('div');
+    tempDiv.innerHTML = html;
+    tempDiv.style.position = 'absolute';
+    tempDiv.style.left = '-9999px';
+    tempDiv.style.width = '210mm';
+    document.body.appendChild(tempDiv);
+
+    try {
+      const canvas = await html2canvas(tempDiv.querySelector('.a4-page') as HTMLElement, { scale: 2 });
+      const imgData = canvas.toDataURL('image/png');
+      const { jsPDF } = window.jspdf;
+      const pdf = new jsPDF('p', 'mm', 'a4');
+      const pdfWidth = pdf.internal.pageSize.getWidth();
+      const pdfHeight = pdf.internal.pageSize.getHeight();
+
+      pdf.addImage(imgData, 'PNG', 0, 0, pdfWidth, pdfHeight);
+      const output = pdf.output('blob');
+      if (output instanceof Blob) {
+        return output;
+      }
+      return new Blob([output], { type: 'application/pdf' });
+    } finally {
+      document.body.removeChild(tempDiv);
+    }
+  }
+
+  private downloadBlob(blob: Blob, filename: string): void {
     const link = document.createElement('a');
-    link.download = `${this.documentData?.header.title || 'document'}.png`;
-    link.href = canvas.toDataURL('image/png');
+    link.href = URL.createObjectURL(blob);
+    link.download = filename;
     link.click();
+    URL.revokeObjectURL(link.href);
   }
 
   handleFileImport(event: Event): void {
@@ -391,26 +773,57 @@ export class App {
   private parseCSV(file: File): void {
     window.Papa.parse(file, {
       complete: (results: { data: string[][] }) => {
-        this.processImportedData(results.data);
+        try {
+          this.processImportedData(results.data);
+        } catch (error) {
+          alert('حدث خطأ أثناء قراءة الملف. يرجى التأكد من صحة البيانات.');
+          console.error('CSV parse error:', error);
+        }
+      },
+      error: (error: Error) => {
+        alert('فشل قراءة الملف: ' + error.message);
+        console.error('CSV parse error:', error);
       }
     });
   }
 
   private parseExcel(file: File): void {
-    const reader = new FileReader();
-    reader.onload = (e) => {
-      const data = e.target?.result;
-      if (!data) return;
+    try {
+      const reader = new FileReader();
+      reader.onload = (e) => {
+        try {
+          const data = e.target?.result;
+          if (!data) {
+            alert('فشل قراءة الملف');
+            return;
+          }
 
-      const workbook = window.XLSX.read(data, { type: 'binary' });
-      const firstSheet = workbook.SheetNames[0];
-      const jsonData = window.XLSX.utils.sheet_to_json(workbook.Sheets[firstSheet]);
+          const workbook = window.XLSX.read(data, { type: 'binary' });
+          const firstSheet = workbook.SheetNames[0];
+          const jsonData = window.XLSX.utils.sheet_to_json(workbook.Sheets[firstSheet]);
 
-      const headers = Object.keys(jsonData[0] as object);
-      const rows = (jsonData as object[]).map(row => headers.map(h => (row as Record<string, unknown>)[h] as string));
-      this.processImportedData([headers, ...rows]);
-    };
-    reader.readAsBinaryString(file);
+          if (!jsonData || jsonData.length === 0) {
+            alert('الملف فارغ أو لا يحتوي على بيانات');
+            return;
+          }
+
+          const headers = Object.keys(jsonData[0] as object);
+          const rows = (jsonData as object[]).map(row => headers.map(h => (row as Record<string, unknown>)[h] as string));
+          this.processImportedData([headers, ...rows]);
+        } catch (parseError) {
+          alert('حدث خطأ أثناء تحليل الملف. يرجى التأكد من صحة التنسيق.');
+          console.error('Excel parse error:', parseError);
+        }
+      };
+      reader.onerror = () => {
+        alert('فشل قراءة الملف');
+        console.error('FileReader error');
+      };
+      reader.readAsBinaryString(file);
+    } catch (error) {
+      alert('حدث خطأ غير متوقع');
+      console.error('Excel parse error:', error);
+    }
   }
 
   private processImportedData(data: string[][]): void {
@@ -425,7 +838,7 @@ export class App {
     if (this.currentDocType === 'cleaning') {
       this.importCleaningData(headers, rows);
     } else {
-      this.importPrayerData(headers, rows);
+      this.importPrayerData(rows);
     }
 
     this.renderAll();
@@ -449,34 +862,144 @@ export class App {
     }
   }
 
-  private importPrayerData(headers: string[], rows: string[][]): void {
-    const dayIdx = headers.findIndex(h => h.includes('يوم') || h.includes('day'));
-    const dateIdx = headers.findIndex(h => h.includes('تاريخ') || h.includes('date'));
-    const openingIdx = headers.findIndex(h => h.includes('فتح') || h.includes('opening'));
-    const closingIdx = headers.findIndex(h => h.includes('غلق') || h.includes('close'));
-    const zuhrImamIdx = headers.findIndex(h => h.includes('ظهر') && h.includes('امام') || h.includes('zuhr') && h.includes('imam'));
-    const zuhrMuezzinIdx = headers.findIndex(h => h.includes('ظهر') && h.includes('اذان') || h.includes('zuhr') && h.includes('muezzin'));
-    const asrImamIdx = headers.findIndex(h => h.includes('عصر') && h.includes('امام') || h.includes('asr') && h.includes('imam'));
-    const asrMuezzinIdx = headers.findIndex(h => h.includes('عصر') && h.includes('اذان') || h.includes('asr') && h.includes('muezzin'));
+  private importPrayerData(rows: string[][]): void {
+    const tableRows: PrayerRow[] = rows.map(row => {
+      const dayDateCell = row[0]?.trim() || '';
+      const openingCell = row[1]?.trim() || '';
+      const zuhrCell = row[2]?.trim() || '';
+      const asrCell = row[3]?.trim() || '';
+      const closingCell = row[4]?.trim() || '';
 
-    const tableRows: PrayerRow[] = rows.map(row => ({
-      day: dayIdx >= 0 ? row[dayIdx]?.trim() || '' : '',
-      date: dateIdx >= 0 ? row[dateIdx]?.trim() || '' : '',
-      opening: openingIdx >= 0 ? row[openingIdx]?.trim() || '' : '',
-      closing: closingIdx >= 0 ? row[closingIdx]?.trim() || '' : '',
-      zuhr: {
-        imam: zuhrImamIdx >= 0 ? row[zuhrImamIdx]?.trim() || '' : '',
-        muezzin: zuhrMuezzinIdx >= 0 ? row[zuhrMuezzinIdx]?.trim() || '' : ''
-      },
-      asr: {
-        imam: asrImamIdx >= 0 ? row[asrImamIdx]?.trim() || '' : '',
-        muezzin: asrMuezzinIdx >= 0 ? row[asrMuezzinIdx]?.trim() || '' : ''
-      }
-    })).filter(row => row.day || row.date || row.opening || row.closing || row.zuhr.imam || row.zuhr.muezzin || row.asr.imam || row.asr.muezzin);
+      const { day, date } = this.parseDayDate(dayDateCell);
+      const opening = this.parseSimpleNames(openingCell);
+      const closing = this.parseSimpleNames(closingCell);
+      const zuhr = this.parsePrayerSlot(zuhrCell);
+      const asr = this.parsePrayerSlot(asrCell);
+
+      return {
+        day,
+        date,
+        opening,
+        zuhr,
+        asr,
+        closing
+      };
+    }).filter(row => row.day || row.date || row.opening || row.closing || row.zuhr.imam || row.zuhr.muezzin || row.asr.imam || row.asr.muezzin);
 
     if (tableRows.length > 0 && this.documentData) {
       this.documentData.tableRows = tableRows;
     }
+  }
+
+  private parseDayDate(cell: string): { day: string; date: string } {
+    const match = cell.match(/^([^\d]+)\s*(\d+\s+\w+)?$/);
+    if (match) {
+      return {
+        day: match[1]?.trim() || '',
+        date: match[2]?.trim() || ''
+      };
+    }
+    return { day: cell, date: '' };
+  }
+
+  private parseSimpleNames(cell: string): string {
+    if (!cell) return '';
+    return cell.split(/\s+/).filter(name => name.trim()).join(' ');
+  }
+
+  private parsePrayerSlot(cell: string): { imam: string; muezzin: string } {
+    const result = { imam: '', muezzin: '' };
+
+    if (!cell) return result;
+
+    // Handle formats:
+    // "الإمام: بوفيس, المؤذن: نمري" (comma separator)
+    // "الإمام: بوفيس المؤذن: نمري" (space separator)
+    // "الإمام : بوفيس المؤذن : نمري"
+
+    // Try comma format first
+    const commaFormat = cell.match(/الإمام\s*:\s*([^,]+)\s*,?\s*المؤذن\s*:\s*(.+)/);
+    if (commaFormat) {
+      result.imam = commaFormat[1]?.trim() || '';
+      result.muezzin = commaFormat[2]?.trim() || '';
+      return result;
+    }
+
+    // Fallback to original format
+    const imamMatch = cell.match(/الإمام\s*:\s*([^\nالمؤذن]+)/);
+    const muezzinMatch = cell.match(/المؤذن\s*:\s*([^\n]+)/);
+
+    if (imamMatch) {
+      result.imam = imamMatch[1]?.trim() || '';
+    }
+    if (muezzinMatch) {
+      result.muezzin = muezzinMatch[1]?.trim() || '';
+    }
+
+    return result;
+  }
+
+  private escapeHtml(str: string): string {
+    return str
+      .replace(/&/g, '&amp;')
+      .replace(/</g, '&lt;')
+      .replace(/>/g, '&gt;')
+      .replace(/"/g, '&quot;');
+  }
+
+  private renderIndividualProgram(personName: string, rows: CleaningRow[]): string {
+    if (!this.documentData) return '';
+    const header = this.documentData.header;
+
+    return `
+      <div class="a4-page">
+        <div class="doc-header">
+          <div class="doc-logo">
+            <svg width="50" height="50" viewBox="0 0 60 60" fill="none" xmlns="http://www.w3.org/2000/svg">
+              <rect width="60" height="60" rx="8" fill="#243245"/>
+              <path d="M42.7626 50.8839V54.9995H27.8633V29.8248C27.8633 25.9693 29.2212 22.3202 31.677 19.5207C33.0075 17.9981 34.5719 16.695 36.3558 15.6104C37.289 16.6258 38.1804 17.7237 38.9345 18.8764C37.3164 19.7952 35.9167 20.9205 34.764 22.251C32.9669 24.282 31.9789 26.9704 31.9789 29.8248V50.8839H42.7626Z" fill="#0DE9C3"/>
+              <path d="M44.6279 54.9999H40.5123V23.4434C40.5123 22.2179 40.208 21.033 39.6328 20.0175C37.053 15.4603 32.1961 11.581 30.0007 9.97362C27.8051 11.5846 22.9389 15.4735 20.3662 20.0175C19.791 21.033 19.4867 22.2179 19.4867 23.4434V54.9999H15.3711V23.4434C15.3711 21.5079 15.8603 19.6225 16.7839 17.9889C20.6561 11.1502 28.5401 5.95344 28.873 5.73506L29.9983 5L31.1236 5.73506C31.4577 5.95224 39.3405 11.1502 43.2127 17.9889C44.1375 19.6213 44.6255 21.5079 44.6255 23.4434V54.9999H44.6279Z" fill="white"/>
+            </svg>
+          </div>
+          <div class="doc-title">
+            <h1>${this.escapeHtml(header.title)} - ${this.escapeHtml(personName)}</h1>
+            <p>${this.escapeHtml(header.subtitle)}</p>
+          </div>
+          <div class="doc-version">${this.escapeHtml(header.version)}</div>
+        </div>
+        <div class="info-box">
+          <h2>جدول مهام ${this.escapeHtml(personName)}</h2>
+          <div class="info-items">
+            <div class="info-item"><span>عدد الأيام:</span><span>${rows.length}</span></div>
+          </div>
+        </div>
+        <table class="doc-table">
+          <thead>
+            <tr>
+              <th style="width: 15%">التاريخ</th>
+              <th style="width: 85%">المهام</th>
+            </tr>
+          </thead>
+          <tbody>
+            ${rows.map(row => `
+              <tr>
+                <td class="date-cell">
+                  ${row.day ? `<div class="day">${this.escapeHtml(row.day)}</div>` : ''}
+                  ${row.date ? `<div class="date">${this.escapeHtml(row.date)}</div>` : ''}
+                </td>
+                <td>
+                  ${row.tasks.length > 0 ? `
+                    <div class="task-list">
+                      ${row.tasks.map(t => `<div class="task-item">${this.escapeHtml(t)}</div>`).join('')}
+                    </div>
+                  ` : '-'}
+                </td>
+              </tr>
+            `).join('')}
+          </tbody>
+        </table>
+      </div>
+    `;
   }
 }
 

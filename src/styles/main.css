@@ -93,7 +93,7 @@ body {
 
 .editor-layout.active {
   display: grid;
-  grid-template-columns: 400px 1fr;
+  grid-template-columns: 450px 1fr;
 }
 
 .editor-sidebar {
@@ -304,6 +304,66 @@ body {
   border-top: 1px solid var(--border);
 }
 
+.members-section {
+  padding: 20px;
+  border-top: 1px solid var(--border);
+}
+
+.members-list {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.member-tag {
+  padding: 6px 12px;
+  background: var(--light-bg);
+  border: 1px solid var(--border);
+  border-radius: 20px;
+  font-size: 13px;
+  cursor: pointer;
+  transition: all 0.2s;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.member-tag:hover {
+  background: var(--primary);
+  color: white;
+  border-color: var(--primary);
+}
+
+.member-tag.active {
+  background: var(--primary);
+  color: white;
+  border-color: var(--primary);
+}
+
+.btn-clear-preview {
+  width: 100%;
+  margin-top: 10px;
+  padding: 8px;
+  background: var(--light-bg);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  font-family: 'Tajawal', sans-serif;
+  font-size: 13px;
+  cursor: pointer;
+  transition: all 0.2s;
+}
+
+.btn-clear-preview:hover {
+  background: var(--primary);
+  color: white;
+  border-color: var(--primary);
+}
+
+.member-preview-btn {
+  font-size: 12px;
+  opacity: 0.7;
+}
+
 .import-buttons {
   display: grid;
   gap: 10px;
@@ -369,6 +429,15 @@ body {
 
 .btn-export.jpg:hover {
   background: #0e7490;
+}
+
+.btn-export.individual {
+  background: #059669;
+  color: white;
+}
+
+.btn-export.individual:hover {
+  background: #047857;
 }
 
 .preview-panel {
@@ -548,6 +617,16 @@ body {
   font-size: 8pt;
   margin-left: 3px;
   opacity: 0.9;
+}
+
+.unavailable {
+  color: #dc2626 !important;
+  font-weight: 600;
+  background-color: #fee2e2 !important;
+  padding: 2px 6px;
+  border-radius: 3px;
+  display: inline-block;
+  margin: 2px 0;
 }
 
 .task-list,
