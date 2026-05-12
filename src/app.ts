@@ -1,4 +1,4 @@
-import type { DocumentType, DocumentData, CleaningRow, PrayerRow } from './types';
+import type { DocumentType, DocumentData, CleaningRow, PrayerRow, CleaningMode } from './types';
 import { getSavedDocumentType, saveDocumentType, getSavedDocumentData, saveDocumentData, clearDocumentData } from './utils/storage';
 import { noteTemplates } from './utils/templates';
 import { renderHeaderEditor } from './components/Editor/header';
@@ -13,6 +13,8 @@ export class App {
   private currentDocType: DocumentType | null = null;
   private documentData: DocumentData | null = null;
   private selectedMember: string | null = null;
+  private dateRangeStart: string = '';
+  private dateRangeEnd: string = '';
 
   constructor() {
     this.init();
@@ -41,6 +43,9 @@ export class App {
     const saved = getSavedDocumentData(type);
     if (saved) {
       this.documentData = saved;
+      if (type === 'cleaning' && !this.documentData.cleaningMode) {
+        (this.documentData as { cleaningMode: CleaningMode }).cleaningMode = 'period';
+      }
     }
 
     this.renderAll();
@@ -99,7 +104,8 @@ export class App {
           content: 'يرجى من جميع المعنيين الالتزام بالمهام الموكلة إليهم لضمان نظافة المصلى خلال فترة الامتحانات. في حال التعذر، يرجى التنسيق المسبق.',
           isVerse: false
         }
-      ]
+      ],
+      cleaningMode: 'period'
     };
   }
 
@@ -177,7 +183,7 @@ export class App {
   updateTableRowArray(index: number, field: string, value: string): void {
     if (!this.documentData) return;
     const row = this.documentData.tableRows[index] as unknown as Record<string, unknown>;
-    (row[field] as string[]) = value.split('\n').filter(x => x.trim());
+    (row[field] as string[]) = value.split('\n').filter(x => x.trim()).map(x => x.trim());
     this.renderPreview();
   }
 
@@ -239,6 +245,70 @@ export class App {
       [this.documentData.tableRows[index + 1], this.documentData.tableRows[index]];
     this.renderEditor();
     this.renderPreview();
+  }
+
+  setCleaningMode(mode: CleaningMode): void {
+    if (!this.documentData) return;
+    this.documentData.cleaningMode = mode;
+    this.renderAll();
+  }
+
+  toggleWeeklyDay(day: string): void {
+    if (!this.documentData) return;
+    const idx = (this.documentData.tableRows as CleaningRow[]).findIndex(r => r.day === day);
+    if (idx >= 0) {
+      const row = this.documentData.tableRows[idx] as CleaningRow;
+      if (row.personnel.length > 0 || row.tasks.length > 0) {
+        if (!confirm(`هل تريد حذف يوم ${day}?`)) return;
+      }
+      this.documentData.tableRows.splice(idx, 1);
+    } else {
+      this.documentData.tableRows.push({ day, date: '', personnel: [], tasks: [] });
+    }
+    this.renderAll();
+  }
+
+  setDateRangeStart(value: string): void {
+    this.dateRangeStart = value;
+  }
+
+  setDateRangeEnd(value: string): void {
+    this.dateRangeEnd = value;
+  }
+
+  generateDateRange(): void {
+    if (!this.documentData) return;
+    if (!this.dateRangeStart || !this.dateRangeEnd) {
+      alert('يرجى اختيار تاريخ البداية والنهاية');
+      return;
+    }
+    const parseDate = (s: string): Date | null => {
+      const parts = s.split('-').map(Number);
+      if (parts.length !== 3 || parts.some(isNaN)) return null;
+      return new Date(parts[0], parts[1] - 1, parts[2]);
+    };
+    const start = parseDate(this.dateRangeStart);
+    const end = parseDate(this.dateRangeEnd);
+    if (!start || !end || start > end) {
+      alert('يرجى إدخال تاريخ بداية ونهاية صحيحين');
+      return;
+    }
+    const dayNames = ['الأحد', 'الإثنين', 'الثلاثاء', 'الأربعاء', 'الخميس', 'الجمعة', 'السبت'];
+    const rows: CleaningRow[] = [];
+    const current = new Date(start);
+    while (current <= end) {
+      const dd = String(current.getDate()).padStart(2, '0');
+      const mm = String(current.getMonth() + 1).padStart(2, '0');
+      rows.push({
+        day: dayNames[current.getDay()],
+        date: `${dd}/${mm}`,
+        personnel: [],
+        tasks: []
+      });
+      current.setDate(current.getDate() + 1);
+    }
+    this.documentData.tableRows = rows;
+    this.renderAll();
   }
 
   updateNoteField(index: number, field: string, value: unknown): void {
@@ -314,9 +384,30 @@ export class App {
       infoBoxFields.innerHTML = renderInfoBoxEditor(this.currentDocType, this.documentData.infoBox, () => this.renderPreview());
     }
 
+    const cleaningModeSection = document.getElementById('cleaningModeSection');
+    if (cleaningModeSection && this.currentDocType === 'cleaning') {
+      const mode = (this.documentData as DocumentData & { cleaningMode: CleaningMode }).cleaningMode;
+      cleaningModeSection.innerHTML = `
+        <div class="cleaning-mode-toggle">
+          <button class="mode-btn ${mode === 'period' ? 'active' : ''}" onclick="window.app.setCleaningMode('period')">📅 برنامج بمدة</button>
+          <button class="mode-btn ${mode === 'weekly' ? 'active' : ''}" onclick="window.app.setCleaningMode('weekly')">📋 برنامج أسبوعي</button>
+        </div>
+        ${mode === 'period' ? `
+          <div class="date-range-picker">
+            <input type="date" id="dateRangeStart" placeholder="تاريخ البداية" value="${this.escapeHtml(this.dateRangeStart)}" onchange="window.app.setDateRangeStart(this.value)">
+            <input type="date" id="dateRangeEnd" placeholder="تاريخ النهاية" value="${this.escapeHtml(this.dateRangeEnd)}" onchange="window.app.setDateRangeEnd(this.value)">
+            <button class="btn-add" onclick="window.app.generateDateRange()">توليد الأيام</button>
+          </div>
+        ` : ''}
+      `;
+    } else if (cleaningModeSection) {
+      cleaningModeSection.innerHTML = '';
+    }
+
     const tableRowsEditor = document.getElementById('tableRowsEditor');
     if (tableRowsEditor) {
-      tableRowsEditor.innerHTML = renderTableRowsEditor(this.currentDocType, this.documentData.tableRows, () => this.renderPreview());
+      const mode = this.currentDocType === 'cleaning' ? (this.documentData as DocumentData & { cleaningMode: CleaningMode }).cleaningMode : undefined;
+      tableRowsEditor.innerHTML = renderTableRowsEditor(this.currentDocType, this.documentData.tableRows, () => this.renderPreview(), mode);
     }
 
     const footerNotesEditor = document.getElementById('footerNotesEditor');
@@ -372,13 +463,15 @@ export class App {
 
     previewPage.style.minHeight = 'auto';
     previewPage.style.backgroundColor = 'white';
+    previewPage.className = '';
 
     previewPage.innerHTML = '';
 
     let html = '';
     if (this.currentDocType === 'cleaning') {
       const rows = this.filterRowsForPerson(personName);
-      html = this.renderIndividualProgram(personName, rows);
+      const mode = (this.documentData as DocumentData & { cleaningMode: CleaningMode }).cleaningMode;
+      html = this.renderIndividualProgram(personName, rows, mode);
     } else {
       const rows = this.filterPrayerRowsForPerson(personName);
       html = this.renderPrayerIndividualProgram(personName, rows);
@@ -415,7 +508,7 @@ export class App {
 
     let html = renderDocHeader(this.documentData.header);
     html += renderInfoBox(this.currentDocType, this.documentData.infoBox);
-    html += renderTable(this.currentDocType, this.documentData.tableRows);
+    html += renderTable(this.currentDocType, this.documentData.tableRows, this.currentDocType === 'cleaning' ? (this.documentData as DocumentData & { cleaningMode: CleaningMode }).cleaningMode : undefined);
     html += renderFooter(this.documentData.footerNotes);
 
     page.innerHTML = html;
@@ -501,10 +594,11 @@ export class App {
 
     const zip = new window.JSZip();
 
+    const mode = (this.documentData as DocumentData & { cleaningMode: CleaningMode }).cleaningMode;
     for (const person of personnelList) {
       try {
         const personRows = this.filterRowsForPerson(person);
-        const html = this.renderIndividualProgram(person, personRows);
+        const html = this.renderIndividualProgram(person, personRows, mode);
         const imageBlob = await this.generateImageBlob(html);
         zip.file(`${person}.png`, imageBlob);
       } catch (error) {
@@ -631,12 +725,21 @@ export class App {
 
     return (this.documentData.tableRows as CleaningRow[])
       .filter(row => row.personnel.includes(personName))
-      .map(row => ({
-        day: row.day,
-        date: row.date,
-        personnel: row.personnel,
-        tasks: row.tasks.filter(task => task.trim() !== '')
-      })) as CleaningRow[];
+      .map(row => {
+        const personIdx = row.personnel.indexOf(personName);
+        let personTasks: string[];
+        if (personIdx >= 0 && row.tasks.length === row.personnel.length) {
+          personTasks = [row.tasks[personIdx]];
+        } else {
+          personTasks = row.tasks.filter(t => t.trim() !== '');
+        }
+        return {
+          day: row.day,
+          date: row.date,
+          personnel: row.personnel,
+          tasks: personTasks
+        };
+      }) as CleaningRow[];
   }
 
   private filterPrayerRowsForPerson(personName: string): PrayerRow[] {
@@ -853,12 +956,14 @@ export class App {
     const tableRows: CleaningRow[] = rows.map(row => ({
       day: dayIdx >= 0 ? row[dayIdx]?.trim() || '' : '',
       date: dateIdx >= 0 ? row[dateIdx]?.trim() || '' : '',
-      personnel: personnelIdx >= 0 ? row[personnelIdx]?.split(/[,،]/).map(p => p.trim()).filter(Boolean) || [] : [],
-      tasks: tasksIdx >= 0 ? row[tasksIdx]?.split(/[,،]/).map(t => t.trim()).filter(Boolean) || [] : []
+      personnel: personnelIdx >= 0 ? row[personnelIdx]?.split(/[,،\n\r]+/).map(p => p.trim()).filter(Boolean) || [] : [],
+      tasks: tasksIdx >= 0 ? row[tasksIdx]?.split(/[,،\n\r]+/).map(t => t.trim()).filter(Boolean) || [] : []
     })).filter(row => row.day || row.date || row.personnel.length || row.tasks.length);
 
     if (tableRows.length > 0 && this.documentData) {
       this.documentData.tableRows = tableRows;
+      const hasDates = tableRows.some(r => r.date && r.date.trim());
+      (this.documentData as { cleaningMode: CleaningMode }).cleaningMode = hasDates ? 'period' : 'weekly';
     }
   }
 
@@ -944,10 +1049,11 @@ export class App {
       .replace(/&/g, '&amp;')
       .replace(/</g, '&lt;')
       .replace(/>/g, '&gt;')
-      .replace(/"/g, '&quot;');
+      .replace(/"/g, '&quot;')
+      .replace(/'/g, '&#39;');
   }
 
-  private renderIndividualProgram(personName: string, rows: CleaningRow[]): string {
+  private renderIndividualProgram(personName: string, rows: CleaningRow[], mode?: CleaningMode): string {
     if (!this.documentData) return '';
     const header = this.documentData.header;
 
@@ -976,7 +1082,7 @@ export class App {
         <table class="doc-table">
           <thead>
             <tr>
-              <th style="width: 15%">التاريخ</th>
+              <th style="width: 15%">${mode === 'weekly' ? 'اليوم' : 'التاريخ'}</th>
               <th style="width: 85%">المهام</th>
             </tr>
           </thead>
@@ -985,7 +1091,7 @@ export class App {
               <tr>
                 <td class="date-cell">
                   ${row.day ? `<div class="day">${this.escapeHtml(row.day)}</div>` : ''}
-                  ${row.date ? `<div class="date">${this.escapeHtml(row.date)}</div>` : ''}
+                  ${row.date && mode !== 'weekly' ? `<div class="date">${this.escapeHtml(row.date)}</div>` : ''}
                 </td>
                 <td>
                   ${row.tasks.length > 0 ? `

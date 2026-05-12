@@ -711,6 +711,98 @@ body {
   line-height: 1.5;
 }
 
+.cleaning-mode-toggle {
+  display: flex;
+  gap: 8px;
+  margin-bottom: 15px;
+}
+
+.mode-btn {
+  flex: 1;
+  padding: 10px;
+  border: 2px solid var(--border);
+  border-radius: 8px;
+  background: white;
+  cursor: pointer;
+  font-family: 'Tajawal', sans-serif;
+  font-size: 14px;
+  font-weight: 600;
+  transition: all 0.3s;
+  color: #555;
+}
+
+.mode-btn.active {
+  background: var(--primary);
+  color: white;
+  border-color: var(--primary);
+}
+
+.mode-btn:hover:not(.active) {
+  border-color: var(--primary);
+  color: var(--primary);
+}
+
+.date-range-picker {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  margin-bottom: 10px;
+  flex-wrap: wrap;
+}
+
+.date-range-picker input[type="date"] {
+  flex: 1;
+  min-width: 120px;
+  padding: 8px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  font-family: 'Tajawal', sans-serif;
+  font-size: 13px;
+}
+
+.date-range-picker .btn-add {
+  flex: 0 0 auto;
+  padding: 8px 16px;
+  white-space: nowrap;
+}
+
+.weekly-day-grid {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-bottom: 15px;
+}
+
+.weekly-day-checkbox {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 8px 14px;
+  border: 2px solid var(--border);
+  border-radius: 8px;
+  cursor: pointer;
+  font-size: 14px;
+  font-weight: 600;
+  color: #555;
+  transition: all 0.2s;
+  user-select: none;
+}
+
+.weekly-day-checkbox:hover {
+  border-color: var(--primary);
+  color: var(--primary);
+}
+
+.weekly-day-checkbox.checked {
+  background: var(--primary);
+  color: white;
+  border-color: var(--primary);
+}
+
+.weekly-day-checkbox input[type="checkbox"] {
+  display: none;
+}
+
 @media (max-width: 768px) {
   .editor-layout.active {
     grid-template-columns: 1fr;

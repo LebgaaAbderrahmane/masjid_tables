@@ -1,4 +1,4 @@
-import type { DocumentType, CleaningRow, PrayerRow, CleaningInfoBox, PrayerInfoBox } from '../../types';
+import type { DocumentType, CleaningRow, PrayerRow, CleaningInfoBox, PrayerInfoBox, CleaningMode } from '../../types';
 
 export function renderInfoBox(type: DocumentType, infoBox: CleaningInfoBox | PrayerInfoBox): string {
   if (type === 'cleaning') {
@@ -27,20 +27,21 @@ export function renderInfoBox(type: DocumentType, infoBox: CleaningInfoBox | Pra
   }
 }
 
-export function renderTable(type: DocumentType, rows: (CleaningRow | PrayerRow)[]): string {
+export function renderTable(type: DocumentType, rows: (CleaningRow | PrayerRow)[], cleaningMode?: CleaningMode): string {
   if (type === 'cleaning') {
-    return renderCleaningTable(rows as CleaningRow[]);
+    return renderCleaningTable(rows as CleaningRow[], cleaningMode);
   } else {
     return renderPrayerTable(rows as PrayerRow[]);
   }
 }
 
-function renderCleaningTable(rows: CleaningRow[]): string {
+function renderCleaningTable(rows: CleaningRow[], cleaningMode?: CleaningMode): string {
+  const isWeekly = cleaningMode === 'weekly';
   return `
     <table class="doc-table">
       <thead>
         <tr>
-          <th style="width: 12%">التاريخ</th>
+          ${isWeekly ? '<th style="width: 12%">اليوم</th>' : '<th style="width: 12%">التاريخ</th>'}
           <th style="width: 30%">المكلفون</th>
           <th style="width: 58%">المهام</th>
         </tr>
@@ -50,7 +51,7 @@ function renderCleaningTable(rows: CleaningRow[]): string {
           <tr>
             <td class="date-cell">
               ${row.day ? `<div class="day">${escapeHtml(row.day)}</div>` : ''}
-              ${row.date ? `<div class="date">${escapeHtml(row.date)}</div>` : ''}
+              ${row.date && !isWeekly ? `<div class="date">${escapeHtml(row.date)}</div>` : ''}
             </td>
             <td>
               ${row.personnel && row.personnel.length > 0 ? `

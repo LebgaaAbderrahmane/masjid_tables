@@ -1,11 +1,30 @@
-import type { DocumentType, CleaningRow, PrayerRow } from '../../types';
+import type { DocumentType, CleaningRow, PrayerRow, CleaningMode } from '../../types';
+
+const WEEKDAYS = ['السبت', 'الأحد', 'الإثنين', 'الثلاثاء', 'الأربعاء', 'الخميس'];
 
 export function renderTableRowsEditor(
   type: DocumentType,
   rows: (CleaningRow | PrayerRow)[],
-  _onChange: () => void
+  _onChange: () => void,
+  cleaningMode?: CleaningMode
 ): string {
-  return rows.map((row, index) => {
+  let html = '';
+
+  if (type === 'cleaning' && cleaningMode === 'weekly') {
+    html += '<div class="weekly-day-grid">';
+    for (const day of WEEKDAYS) {
+      const checked = (rows as CleaningRow[]).some(r => r.day === day);
+      html += `
+        <label class="weekly-day-checkbox ${checked ? 'checked' : ''}">
+          <input type="checkbox" ${checked ? 'checked' : ''} onchange="window.app.toggleWeeklyDay('${day}')">
+          ${day}
+        </label>
+      `;
+    }
+    html += '</div>';
+  }
+
+  html += rows.map((row, index) => {
     const controls = `
       <div class="row-controls">
         ${index > 0 ? '<button class="btn-icon" onclick="window.app.moveRowUp(' + index + ')">↑</button>' : ''}
@@ -16,12 +35,14 @@ export function renderTableRowsEditor(
 
     if (type === 'cleaning') {
       const cleaningRow = row as CleaningRow;
+      const isWeekly = cleaningMode === 'weekly';
       return `
         <div class="table-row-editor">
           <div class="table-row-header">
-            <strong>صف ${index + 1}</strong>
+            <strong>${isWeekly ? cleaningRow.day : `صف ${index + 1}`}</strong>
             ${controls}
           </div>
+          ${isWeekly ? '' : `
           <div class="form-group">
             <label>اليوم</label>
             <input type="text" value="${escapeHtml(cleaningRow.day)}" oninput="window.app.updateTableRowField(${index}, 'day', this.value)">
@@ -30,6 +51,7 @@ export function renderTableRowsEditor(
             <label>التاريخ</label>
             <input type="text" value="${escapeHtml(cleaningRow.date)}" oninput="window.app.updateTableRowField(${index}, 'date', this.value)">
           </div>
+          `}
           <div class="form-group">
             <label>المكلفون (سطر لكل شخص)</label>
             <textarea oninput="window.app.updateTableRowArray(${index}, 'personnel', this.value)">${(cleaningRow.personnel || []).join('\n')}</textarea>
@@ -84,6 +106,8 @@ export function renderTableRowsEditor(
       `;
     }
   }).join('');
+
+  return html;
 }
 
 function escapeHtml(str: string): string {
