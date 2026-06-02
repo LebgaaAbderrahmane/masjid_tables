@@ -25,6 +25,7 @@ export class App {
     if (savedType) {
       this.selectType(savedType);
     }
+    this.setupTableEventListeners();
   }
 
   selectType(type: DocumentType): void {
@@ -316,6 +317,10 @@ export class App {
     const rows: (CleaningRow | PrayerRow)[] = [];
     const current = new Date(start);
     while (current <= end) {
+      if (current.getDay() === 5) {
+        current.setDate(current.getDate() + 1);
+        continue;
+      }
       const dd = String(current.getDate()).padStart(2, '0');
       const mm = String(current.getMonth() + 1).padStart(2, '0');
       if (this.currentDocType === 'cleaning') {
@@ -446,15 +451,13 @@ export class App {
     }
 
     this.renderMembersList();
-    this.setupTableEventListeners();
   }
 
   private setupTableEventListeners(): void {
     const tableEditor = document.getElementById('tableRowsEditor');
     if (tableEditor) {
-      const handler = (e: Event) => {
-        const target = e.target as HTMLElement;
-        const btn = target.closest('[data-index]') as HTMLElement | null;
+      tableEditor.addEventListener('click', (e: Event) => {
+        const btn = (e.target as HTMLElement).closest('[data-index]') as HTMLElement | null;
         if (!btn) return;
         const index = parseInt(btn.dataset.index ?? '', 10);
         if (isNaN(index)) return;
@@ -466,16 +469,13 @@ export class App {
         } else if (action === 'moveDown') {
           this.moveRowDown(index);
         }
-      };
-      tableEditor.removeEventListener('click', handler);
-      tableEditor.addEventListener('click', handler);
+      });
     }
 
     const footerEditor = document.getElementById('footerNotesEditor');
     if (footerEditor) {
-      const handler = (e: Event) => {
-        const target = e.target as HTMLElement;
-        const btn = target.closest('[data-index]') as HTMLElement | null;
+      footerEditor.addEventListener('click', (e: Event) => {
+        const btn = (e.target as HTMLElement).closest('[data-index]') as HTMLElement | null;
         if (!btn) return;
         const index = parseInt(btn.dataset.index ?? '', 10);
         if (isNaN(index)) return;
@@ -487,9 +487,7 @@ export class App {
         } else if (action === 'moveDown') {
           this.moveNoteDown(index);
         }
-      };
-      footerEditor.removeEventListener('click', handler);
-      footerEditor.addEventListener('click', handler);
+      });
     }
   }
 
