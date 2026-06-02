@@ -1,5 +1,5 @@
 export type DocumentType = 'cleaning' | 'prayer';
-export type CleaningMode = 'period' | 'weekly';
+export type PlanningMode = 'period' | 'weekly';
 
 export interface HeaderData {
   title: string;
@@ -62,7 +62,7 @@ export interface DocumentData {
   infoBox: InfoBoxData;
   tableRows: TableRow[];
   footerNotes: FooterNote[];
-  cleaningMode?: CleaningMode;
+  planningMode?: PlanningMode;
 }
 
 export interface NoteTemplate {

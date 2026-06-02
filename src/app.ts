@@ -1,4 +1,4 @@
-import type { DocumentType, DocumentData, CleaningRow, PrayerRow, CleaningMode } from './types';
+import type { DocumentType, DocumentData, CleaningRow, PrayerRow, PlanningMode } from './types';
 import { getSavedDocumentType, saveDocumentType, getSavedDocumentData, saveDocumentData, clearDocumentData } from './utils/storage';
 import { noteTemplates } from './utils/templates';
 import { renderHeaderEditor } from './components/Editor/header';
@@ -43,8 +43,8 @@ export class App {
     const saved = getSavedDocumentData(type);
     if (saved) {
       this.documentData = saved;
-      if (type === 'cleaning' && !this.documentData.cleaningMode) {
-        (this.documentData as { cleaningMode: CleaningMode }).cleaningMode = 'period';
+      if (!this.documentData.planningMode) {
+        (this.documentData as { planningMode: PlanningMode }).planningMode = 'period';
       }
     }
 
@@ -105,7 +105,7 @@ export class App {
           isVerse: false
         }
       ],
-      cleaningMode: 'period'
+      planningMode: 'period'
     };
   }
 
@@ -140,7 +140,8 @@ export class App {
           content: 'يرجى الالتزام بالتواجد قبل وقت الصلاة ب 10 دقائق على الأقل. في حالة عدم القدرة على الحضور، يرجى التواصل مع المسؤول لتحديد بديل.',
           isVerse: false
         }
-      ]
+      ],
+      planningMode: 'period'
     };
   }
 
@@ -247,23 +248,41 @@ export class App {
     this.renderPreview();
   }
 
-  setCleaningMode(mode: CleaningMode): void {
+  setPlanningMode(mode: PlanningMode): void {
     if (!this.documentData) return;
-    this.documentData.cleaningMode = mode;
+    this.documentData.planningMode = mode;
     this.renderAll();
   }
 
   toggleWeeklyDay(day: string): void {
-    if (!this.documentData) return;
-    const idx = (this.documentData.tableRows as CleaningRow[]).findIndex(r => r.day === day);
+    if (!this.documentData || !this.currentDocType) return;
+    const idx = this.documentData.tableRows.findIndex(r => (r as { day: string }).day === day);
     if (idx >= 0) {
-      const row = this.documentData.tableRows[idx] as CleaningRow;
-      if (row.personnel.length > 0 || row.tasks.length > 0) {
-        if (!confirm(`هل تريد حذف يوم ${day}?`)) return;
+      if (this.currentDocType === 'cleaning') {
+        const row = this.documentData.tableRows[idx] as CleaningRow;
+        if (row.personnel.length > 0 || row.tasks.length > 0) {
+          if (!confirm(`هل تريد حذف يوم ${day}?`)) return;
+        }
+      } else {
+        const row = this.documentData.tableRows[idx] as PrayerRow;
+        if (row.opening || row.zuhr.imam || row.zuhr.muezzin || row.asr.imam || row.asr.muezzin || row.closing) {
+          if (!confirm(`هل تريد حذف يوم ${day}?`)) return;
+        }
       }
       this.documentData.tableRows.splice(idx, 1);
     } else {
-      this.documentData.tableRows.push({ day, date: '', personnel: [], tasks: [] });
+      if (this.currentDocType === 'cleaning') {
+        this.documentData.tableRows.push({ day, date: '', personnel: [], tasks: [] } as CleaningRow);
+      } else {
+        this.documentData.tableRows.push({
+          day,
+          date: '',
+          opening: '',
+          zuhr: { imam: '', muezzin: '' },
+          asr: { imam: '', muezzin: '' },
+          closing: ''
+        } as PrayerRow);
+      }
     }
     this.renderAll();
   }
@@ -277,7 +296,7 @@ export class App {
   }
 
   generateDateRange(): void {
-    if (!this.documentData) return;
+    if (!this.documentData || !this.currentDocType) return;
     if (!this.dateRangeStart || !this.dateRangeEnd) {
       alert('يرجى اختيار تاريخ البداية والنهاية');
       return;
@@ -294,17 +313,28 @@ export class App {
       return;
     }
     const dayNames = ['الأحد', 'الإثنين', 'الثلاثاء', 'الأربعاء', 'الخميس', 'الجمعة', 'السبت'];
-    const rows: CleaningRow[] = [];
+    const rows: (CleaningRow | PrayerRow)[] = [];
     const current = new Date(start);
     while (current <= end) {
       const dd = String(current.getDate()).padStart(2, '0');
       const mm = String(current.getMonth() + 1).padStart(2, '0');
-      rows.push({
-        day: dayNames[current.getDay()],
-        date: `${dd}/${mm}`,
-        personnel: [],
-        tasks: []
-      });
+      if (this.currentDocType === 'cleaning') {
+        rows.push({
+          day: dayNames[current.getDay()],
+          date: `${dd}/${mm}`,
+          personnel: [],
+          tasks: []
+        } as CleaningRow);
+      } else {
+        rows.push({
+          day: dayNames[current.getDay()],
+          date: `${dd}/${mm}`,
+          opening: '',
+          zuhr: { imam: '', muezzin: '' },
+          asr: { imam: '', muezzin: '' },
+          closing: ''
+        } as PrayerRow);
+      }
       current.setDate(current.getDate() + 1);
     }
     this.documentData.tableRows = rows;
@@ -385,12 +415,12 @@ export class App {
     }
 
     const cleaningModeSection = document.getElementById('cleaningModeSection');
-    if (cleaningModeSection && this.currentDocType === 'cleaning') {
-      const mode = (this.documentData as DocumentData & { cleaningMode: CleaningMode }).cleaningMode;
+    if (cleaningModeSection && this.currentDocType) {
+      const mode = (this.documentData as DocumentData & { planningMode: PlanningMode }).planningMode;
       cleaningModeSection.innerHTML = `
         <div class="cleaning-mode-toggle">
-          <button class="mode-btn ${mode === 'period' ? 'active' : ''}" onclick="window.app.setCleaningMode('period')">📅 برنامج بمدة</button>
-          <button class="mode-btn ${mode === 'weekly' ? 'active' : ''}" onclick="window.app.setCleaningMode('weekly')">📋 برنامج أسبوعي</button>
+          <button class="mode-btn ${mode === 'period' ? 'active' : ''}" onclick="window.app.setPlanningMode('period')">📅 برنامج بمدة</button>
+          <button class="mode-btn ${mode === 'weekly' ? 'active' : ''}" onclick="window.app.setPlanningMode('weekly')">📋 برنامج أسبوعي</button>
         </div>
         ${mode === 'period' ? `
           <div class="date-range-picker">
@@ -406,7 +436,7 @@ export class App {
 
     const tableRowsEditor = document.getElementById('tableRowsEditor');
     if (tableRowsEditor) {
-      const mode = this.currentDocType === 'cleaning' ? (this.documentData as DocumentData & { cleaningMode: CleaningMode }).cleaningMode : undefined;
+      const mode = (this.documentData as DocumentData & { planningMode: PlanningMode }).planningMode;
       tableRowsEditor.innerHTML = renderTableRowsEditor(this.currentDocType, this.documentData.tableRows, () => this.renderPreview(), mode);
     }
 
@@ -416,6 +446,51 @@ export class App {
     }
 
     this.renderMembersList();
+    this.setupTableEventListeners();
+  }
+
+  private setupTableEventListeners(): void {
+    const tableEditor = document.getElementById('tableRowsEditor');
+    if (tableEditor) {
+      const handler = (e: Event) => {
+        const target = e.target as HTMLElement;
+        const btn = target.closest('[data-index]') as HTMLElement | null;
+        if (!btn) return;
+        const index = parseInt(btn.dataset.index ?? '', 10);
+        if (isNaN(index)) return;
+        const action = btn.dataset.action ?? 'delete';
+        if (action === 'delete') {
+          this.deleteRow(index);
+        } else if (action === 'moveUp') {
+          this.moveRowUp(index);
+        } else if (action === 'moveDown') {
+          this.moveRowDown(index);
+        }
+      };
+      tableEditor.removeEventListener('click', handler);
+      tableEditor.addEventListener('click', handler);
+    }
+
+    const footerEditor = document.getElementById('footerNotesEditor');
+    if (footerEditor) {
+      const handler = (e: Event) => {
+        const target = e.target as HTMLElement;
+        const btn = target.closest('[data-index]') as HTMLElement | null;
+        if (!btn) return;
+        const index = parseInt(btn.dataset.index ?? '', 10);
+        if (isNaN(index)) return;
+        const action = btn.dataset.action ?? 'delete';
+        if (action === 'delete') {
+          this.deleteNote(index);
+        } else if (action === 'moveUp') {
+          this.moveNoteUp(index);
+        } else if (action === 'moveDown') {
+          this.moveNoteDown(index);
+        }
+      };
+      footerEditor.removeEventListener('click', handler);
+      footerEditor.addEventListener('click', handler);
+    }
   }
 
   private renderMembersList(): void {
@@ -470,7 +545,7 @@ export class App {
     let html = '';
     if (this.currentDocType === 'cleaning') {
       const rows = this.filterRowsForPerson(personName);
-      const mode = (this.documentData as DocumentData & { cleaningMode: CleaningMode }).cleaningMode;
+      const mode = (this.documentData as DocumentData & { planningMode: PlanningMode }).planningMode;
       html = this.renderIndividualProgram(personName, rows, mode);
     } else {
       const rows = this.filterPrayerRowsForPerson(personName);
@@ -508,7 +583,7 @@ export class App {
 
     let html = renderDocHeader(this.documentData.header);
     html += renderInfoBox(this.currentDocType, this.documentData.infoBox);
-    html += renderTable(this.currentDocType, this.documentData.tableRows, this.currentDocType === 'cleaning' ? (this.documentData as DocumentData & { cleaningMode: CleaningMode }).cleaningMode : undefined);
+    html += renderTable(this.currentDocType, this.documentData.tableRows, (this.documentData as DocumentData & { planningMode: PlanningMode }).planningMode);
     html += renderFooter(this.documentData.footerNotes);
 
     page.innerHTML = html;
@@ -594,7 +669,7 @@ export class App {
 
     const zip = new window.JSZip();
 
-    const mode = (this.documentData as DocumentData & { cleaningMode: CleaningMode }).cleaningMode;
+    const mode = (this.documentData as DocumentData & { planningMode: PlanningMode }).planningMode;
     for (const person of personnelList) {
       try {
         const personRows = this.filterRowsForPerson(person);
@@ -963,7 +1038,7 @@ export class App {
     if (tableRows.length > 0 && this.documentData) {
       this.documentData.tableRows = tableRows;
       const hasDates = tableRows.some(r => r.date && r.date.trim());
-      (this.documentData as { cleaningMode: CleaningMode }).cleaningMode = hasDates ? 'period' : 'weekly';
+      (this.documentData as { planningMode: PlanningMode }).planningMode = hasDates ? 'period' : 'weekly';
     }
   }
 
@@ -1053,7 +1128,7 @@ export class App {
       .replace(/'/g, '&#39;');
   }
 
-  private renderIndividualProgram(personName: string, rows: CleaningRow[], mode?: CleaningMode): string {
+  private renderIndividualProgram(personName: string, rows: CleaningRow[], mode?: PlanningMode): string {
     if (!this.documentData) return '';
     const header = this.documentData.header;
 

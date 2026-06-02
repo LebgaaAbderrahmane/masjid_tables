@@ -1,4 +1,4 @@
-import type { DocumentType, CleaningRow, PrayerRow, CleaningInfoBox, PrayerInfoBox, CleaningMode } from '../../types';
+import type { DocumentType, CleaningRow, PrayerRow, CleaningInfoBox, PrayerInfoBox, PlanningMode } from '../../types';
 
 export function renderInfoBox(type: DocumentType, infoBox: CleaningInfoBox | PrayerInfoBox): string {
   if (type === 'cleaning') {
@@ -27,16 +27,16 @@ export function renderInfoBox(type: DocumentType, infoBox: CleaningInfoBox | Pra
   }
 }
 
-export function renderTable(type: DocumentType, rows: (CleaningRow | PrayerRow)[], cleaningMode?: CleaningMode): string {
+export function renderTable(type: DocumentType, rows: (CleaningRow | PrayerRow)[], planningMode?: PlanningMode): string {
   if (type === 'cleaning') {
-    return renderCleaningTable(rows as CleaningRow[], cleaningMode);
+    return renderCleaningTable(rows as CleaningRow[], planningMode);
   } else {
-    return renderPrayerTable(rows as PrayerRow[]);
+    return renderPrayerTable(rows as PrayerRow[], planningMode);
   }
 }
 
-function renderCleaningTable(rows: CleaningRow[], cleaningMode?: CleaningMode): string {
-  const isWeekly = cleaningMode === 'weekly';
+function renderCleaningTable(rows: CleaningRow[], planningMode?: PlanningMode): string {
+  const isWeekly = planningMode === 'weekly';
   return `
     <table class="doc-table">
       <thead>
@@ -74,12 +74,13 @@ function renderCleaningTable(rows: CleaningRow[], cleaningMode?: CleaningMode): 
   `;
 }
 
-function renderPrayerTable(rows: PrayerRow[]): string {
+function renderPrayerTable(rows: PrayerRow[], planningMode?: PlanningMode): string {
+  const isWeekly = planningMode === 'weekly';
   return `
     <table class="doc-table">
       <thead>
         <tr>
-          <th style="width: 12%">التاريخ</th>
+          <th style="width: 12%">${isWeekly ? 'اليوم' : 'التاريخ'}</th>
           <th style="width: 20%">الفتح</th>
           <th style="width: 22%">الظهر</th>
           <th style="width: 22%">العصر</th>
@@ -91,7 +92,7 @@ function renderPrayerTable(rows: PrayerRow[]): string {
           <tr>
             <td class="date-cell">
               ${row.day ? `<div class="day">${escapeHtml(row.day)}</div>` : ''}
-              ${row.date ? `<div class="date">${escapeHtml(row.date)}</div>` : ''}
+              ${row.date && !isWeekly ? `<div class="date">${escapeHtml(row.date)}</div>` : ''}
             </td>
             <td>${renderMultipleNames(row.opening)}</td>
             <td>

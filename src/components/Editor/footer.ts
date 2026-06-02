@@ -9,9 +9,9 @@ export function renderFooterNotesEditor(notes: FooterNote[], _onChange: () => vo
   return notes.map((note, index) => {
     const controls = `
       <div class="row-controls">
-        ${index > 0 ? '<button class="btn-icon" onclick="window.app.moveNoteUp(' + index + ')">↑</button>' : ''}
-        ${index < notes.length - 1 ? '<button class="btn-icon" onclick="window.app.moveNoteDown(' + index + ')">↓</button>' : ''}
-        <button class="btn-icon delete" onclick="window.app.deleteNote(' + index + ')">×</button>
+        ${index > 0 ? `<button class="btn-icon" data-action="moveUp" data-index="${index}" data-type="note">↑</button>` : ''}
+        ${index < notes.length - 1 ? `<button class="btn-icon" data-action="moveDown" data-index="${index}" data-type="note">↓</button>` : ''}
+        <button class="btn-icon delete" data-index="${index}" data-type="note">×</button>
       </div>
     `;
 

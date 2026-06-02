@@ -1,4 +1,4 @@
-import type { DocumentType, CleaningRow, PrayerRow, CleaningMode } from '../../types';
+import type { DocumentType, CleaningRow, PrayerRow, PlanningMode } from '../../types';
 
 const WEEKDAYS = ['السبت', 'الأحد', 'الإثنين', 'الثلاثاء', 'الأربعاء', 'الخميس'];
 
@@ -6,14 +6,16 @@ export function renderTableRowsEditor(
   type: DocumentType,
   rows: (CleaningRow | PrayerRow)[],
   _onChange: () => void,
-  cleaningMode?: CleaningMode
+  planningMode?: PlanningMode
 ): string {
   let html = '';
 
-  if (type === 'cleaning' && cleaningMode === 'weekly') {
+  const isWeekly = planningMode === 'weekly';
+
+  if (isWeekly) {
     html += '<div class="weekly-day-grid">';
     for (const day of WEEKDAYS) {
-      const checked = (rows as CleaningRow[]).some(r => r.day === day);
+      const checked = (rows as Array<{ day: string }>).some(r => r.day === day);
       html += `
         <label class="weekly-day-checkbox ${checked ? 'checked' : ''}">
           <input type="checkbox" ${checked ? 'checked' : ''} onchange="window.app.toggleWeeklyDay('${day}')">
@@ -27,15 +29,14 @@ export function renderTableRowsEditor(
   html += rows.map((row, index) => {
     const controls = `
       <div class="row-controls">
-        ${index > 0 ? '<button class="btn-icon" onclick="window.app.moveRowUp(' + index + ')">↑</button>' : ''}
-        ${index < rows.length - 1 ? '<button class="btn-icon" onclick="window.app.moveRowDown(' + index + ')">↓</button>' : ''}
-        <button class="btn-icon delete" onclick="window.app.deleteRow(' + index + ')">×</button>
+        ${index > 0 ? `<button class="btn-icon" data-action="moveUp" data-index="${index}">↑</button>` : ''}
+        ${index < rows.length - 1 ? `<button class="btn-icon" data-action="moveDown" data-index="${index}">↓</button>` : ''}
+        <button class="btn-icon delete" data-index="${index}">×</button>
       </div>
     `;
 
     if (type === 'cleaning') {
       const cleaningRow = row as CleaningRow;
-      const isWeekly = cleaningMode === 'weekly';
       return `
         <div class="table-row-editor">
           <div class="table-row-header">
@@ -67,9 +68,10 @@ export function renderTableRowsEditor(
       return `
         <div class="table-row-editor">
           <div class="table-row-header">
-            <strong>صف ${index + 1}</strong>
+            <strong>${isWeekly ? prayerRow.day : `صف ${index + 1}`}</strong>
             ${controls}
           </div>
+          ${isWeekly ? '' : `
           <div class="form-group">
             <label>اليوم</label>
             <input type="text" value="${escapeHtml(prayerRow.day)}" oninput="window.app.updateTableRowField(${index}, 'day', this.value)">
@@ -78,6 +80,7 @@ export function renderTableRowsEditor(
             <label>التاريخ</label>
             <input type="text" value="${escapeHtml(prayerRow.date)}" oninput="window.app.updateTableRowField(${index}, 'date', this.value)">
           </div>
+          `}
           <div class="form-group">
             <label>الفتح</label>
             <input type="text" value="${escapeHtml(prayerRow.opening)}" oninput="window.app.updateTableRowField(${index}, 'opening', this.value)">
