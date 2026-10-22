@@ -1,32 +1,84 @@
-import type { DocumentType, DocumentData, CleaningRow, PrayerRow, PlanningMode } from './types';
-import { getSavedDocumentType, saveDocumentType, getSavedDocumentData, saveDocumentData, clearDocumentData } from './utils/storage';
+import type {
+  CircleCell,
+  CircleColumn,
+  CirclesDocument,
+  CleaningRow,
+  DocumentData,
+  DocumentType,
+  PrayerRow,
+  TableRow
+} from './types';
+import {
+  clearDocumentData,
+  getSavedDocumentData,
+  getSavedDocumentType,
+  saveDocumentData,
+  saveDocumentType
+} from './utils/storage';
 import { noteTemplates } from './utils/templates';
+import { escapeHtml } from './utils/html';
+import { createCell, createColumnId, getDocTypeConfig, type DocTypeConfig } from './docTypes/registry';
+import { DAY_NAME_BY_INDEX } from './constants/days';
 import { renderHeaderEditor } from './components/Editor/header';
 import { renderInfoBoxEditor } from './components/Editor/infoBox';
 import { renderTableRowsEditor } from './components/Editor/tableRows';
 import { renderFooterNotesEditor } from './components/Editor/footer';
-import { renderDocHeader } from './components/Preview/header';
+import { renderColumnsEditor } from './components/Editor/columns';
+import { MOSQUE_LOGO, renderDocHeader } from './components/Preview/header';
 import { renderInfoBox, renderTable } from './components/Preview/table';
 import { renderFooter } from './components/Preview/footer';
+
+/** `Date.parse`-free ISO reader that rejects rolled-over dates such as 2026-02-31. */
+function parseIsoDate(value: string): Date | null {
+  const parts = value.split('-').map(Number);
+  if (parts.length !== 3 || parts.some(Number.isNaN)) return null;
+  const date = new Date(parts[0], parts[1] - 1, parts[2]);
+  if (date.getFullYear() !== parts[0] || date.getMonth() !== parts[1] - 1 || date.getDate() !== parts[2]) {
+    return null;
+  }
+  return date;
+}
+
+/**
+ * `DocumentData` is a discriminated union, so each member has its own
+ * `tableRows` element type and there is no single valid type to assign a mixed
+ * `TableRow[]` to. This is the single place that bridges the gap.
+ */
+function setTableRows(doc: DocumentData, rows: TableRow[]): void {
+  (doc as { tableRows: TableRow[] }).tableRows = rows;
+}
+
+/** Same union problem as {@link setTableRows}: `push` needs the intersected type. */
+function pushTableRow(doc: DocumentData, row: TableRow): void {
+  (doc as { tableRows: TableRow[] }).tableRows.push(row);
+}
+
+function setSectionVisible(id: string, visible: boolean): void {
+  const element = document.getElementById(id);
+  if (element) element.style.display = visible ? '' : 'none';
+}
 
 export class App {
   private currentDocType: DocumentType | null = null;
   private documentData: DocumentData | null = null;
   private selectedMember: string | null = null;
-  private dateRangeStart: string = '';
-  private dateRangeEnd: string = '';
+  private dateRangeStart = '';
+  private dateRangeEnd = '';
 
   constructor() {
     this.init();
   }
 
   private init(): void {
+    this.setupTableEventListeners();
+
     const savedType = getSavedDocumentType();
     if (savedType) {
       this.selectType(savedType);
     }
-    this.setupTableEventListeners();
   }
+
+  // ---------------------------------------------------------------- documents
 
   selectType(type: DocumentType): void {
     this.currentDocType = type;
@@ -35,28 +87,18 @@ export class App {
     document.getElementById('typeSelection')!.style.display = 'none';
     document.getElementById('editorLayout')!.classList.add('active');
 
-    if (type === 'cleaning') {
-      this.initCleaningDocument();
-    } else {
-      this.initPrayerDocument();
-    }
+    const config = getDocTypeConfig(type);
+    document.getElementById('editorTitle')!.textContent = config.editorTitle;
 
-    const saved = getSavedDocumentData(type);
-    if (saved) {
-      this.documentData = saved;
-      if (!this.documentData.planningMode) {
-        (this.documentData as { planningMode: PlanningMode }).planningMode = 'period';
-      }
-    }
+    this.documentData = getSavedDocumentData(type) ?? config.makeDefaultDocument();
 
+    this.applyFeatureVisibility(config);
     this.renderAll();
   }
 
   changeDocumentType(): void {
     if (confirm('هل أنت متأكد? سيتم حفظ البيانات الحالية.')) {
-      if (this.currentDocType && this.documentData) {
-        saveDocumentData(this.currentDocType, this.documentData);
-      }
+      this.saveCurrentState();
       document.getElementById('editorLayout')!.classList.remove('active');
       document.getElementById('typeSelection')!.style.display = 'flex';
     }
@@ -67,84 +109,28 @@ export class App {
     if (!confirm('هل أنت متأكد? سيتم حذف جميع التغييرات الحالية والعودة إلى الإعدادات الافتراضية.')) return;
 
     clearDocumentData(this.currentDocType);
-
-    if (this.currentDocType === 'cleaning') {
-      this.initCleaningDocument();
-    } else {
-      this.initPrayerDocument();
-    }
-
+    this.documentData = getDocTypeConfig(this.currentDocType).makeDefaultDocument();
     this.renderAll();
   }
 
-  private initCleaningDocument(): void {
-    document.getElementById('editorTitle')!.textContent = 'محرر برنامج النظافة';
+  private applyFeatureVisibility(config: DocTypeConfig): void {
+    setSectionVisible('membersSection', config.features.members);
+    setSectionVisible('importSection', config.features.import);
 
-    this.documentData = {
-      header: {
-        title: 'برنامج النظافة',
-        subtitle: 'لفترة امتحانات السداسي الأول 26/25',
-        version: '1.1'
-      },
-      infoBox: {
-        title: 'جدول توزيع مهام النظافة',
-        period: '25/01 - 29/01',
-        responsible: 'إدارة المسجد'
-      },
-      tableRows: [
-        {
-          day: 'السبت',
-          date: '24/01',
-          personnel: [],
-          tasks: []
-        }
-      ],
-      footerNotes: [
-        {
-          title: 'ملاحظة مهمة',
-          content: 'يرجى من جميع المعنيين الالتزام بالمهام الموكلة إليهم لضمان نظافة المصلى خلال فترة الامتحانات. في حال التعذر، يرجى التنسيق المسبق.',
-          isVerse: false
-        }
-      ],
-      planningMode: 'period'
-    };
+    const individualButton = document.getElementById('individualExportBtn');
+    if (individualButton) individualButton.hidden = !config.features.individualExport;
   }
 
-  private initPrayerDocument(): void {
-    document.getElementById('editorTitle')!.textContent = 'محرر برنامج الصلاة';
-
-    this.documentData = {
-      header: {
-        title: 'برنامج الصلاة',
-        subtitle: 'جدول توزيع المهام اليومية',
-        version: '1.1'
-      },
-      infoBox: {
-        title: 'أوقات الإقامة',
-        zuhr: 'مباشرة',
-        asr: '5 دقائق',
-        maghrib: ''
-      },
-      tableRows: [
-        {
-          day: 'الاثنين',
-          date: '',
-          opening: '',
-          zuhr: { imam: '', muezzin: '' },
-          asr: { imam: '', muezzin: '' },
-          closing: ''
-        }
-      ],
-      footerNotes: [
-        {
-          title: 'ملاحظة مهمة',
-          content: 'يرجى الالتزام بالتواجد قبل وقت الصلاة ب 10 دقائق على الأقل. في حالة عدم القدرة على الحضور، يرجى التواصل مع المسؤول لتحديد بديل.',
-          isVerse: false
-        }
-      ],
-      planningMode: 'period'
-    };
+  private config(): DocTypeConfig | null {
+    return this.currentDocType ? getDocTypeConfig(this.currentDocType) : null;
   }
+
+  private circlesDoc(): CirclesDocument | null {
+    const doc = this.documentData;
+    return doc && doc.type === 'circles' ? doc : null;
+  }
+
+  // ------------------------------------------------------------------- header
 
   updateHeaderTitle(value: string): void {
     if (this.documentData) {
@@ -167,31 +153,58 @@ export class App {
     }
   }
 
-  updateInfoBoxField(field: string, value: string): void {
-    if (!this.documentData || !this.currentDocType) return;
+  // ----------------------------------------------------------------- info box
 
-    const infoBox = this.documentData.infoBox as unknown as Record<string, string>;
+  updateInfoBoxField(field: string, value: string): void {
+    const doc = this.documentData;
+    if (!doc) return;
+
+    // Every info box is a flat record of strings; the key set is validated by
+    // the per-type editor that emits these handlers.
+    const infoBox = doc.infoBox as unknown as Record<string, string>;
     infoBox[field] = value;
     this.renderPreview();
   }
 
+  // -------------------------------------------------------------- table rows
+
   updateTableRowField(index: number, field: string, value: string): void {
-    if (!this.documentData) return;
-    const row = this.documentData.tableRows[index] as unknown as Record<string, unknown>;
+    const doc = this.documentData;
+    if (!doc) return;
+
+    const row = doc.tableRows[index] as unknown as Record<string, unknown>;
     row[field] = value;
+
     this.renderPreview();
+    // Opening/closing feed the prayer members panel; keep it in sync.
+    this.renderMembersList();
   }
 
-  updateTableRowArray(index: number, field: string, value: string): void {
-    if (!this.documentData) return;
-    const row = this.documentData.tableRows[index] as unknown as Record<string, unknown>;
-    (row[field] as string[]) = value.split('\n').filter(x => x.trim()).map(x => x.trim());
+  updateTableRowArray(index: number, field: 'personnel' | 'tasks', value: string): void {
+    const doc = this.documentData;
+    if (!doc || doc.type !== 'cleaning') return;
+
+    const row = doc.tableRows[index];
+    row[field] = value
+      .split('\n')
+      .map(line => line.trim())
+      .filter(Boolean);
+
     this.renderPreview();
+    // The members panel derives from these fields, so it has to follow.
+    this.renderMembersList();
   }
 
-  updatePrayerSlot(rowIndex: number, slot: 'zuhr' | 'asr', role: 'imam' | 'muezzin', value: string): void {
-    if (!this.documentData) return;
-    const row = this.documentData.tableRows[rowIndex] as PrayerRow;
+  updatePrayerSlot(
+    rowIndex: number,
+    slot: 'zuhr' | 'asr',
+    role: 'imam' | 'muezzin',
+    value: string
+  ): void {
+    const doc = this.documentData;
+    if (!doc || doc.type !== 'prayer') return;
+
+    const row = doc.tableRows[rowIndex];
     if (!row[slot]) {
       row[slot] = { imam: '', muezzin: '' };
     }
@@ -199,92 +212,81 @@ export class App {
     this.renderPreview();
   }
 
+  updateCircleCell(rowIndex: number, columnId: string, field: keyof CircleCell, value: string): void {
+    const doc = this.circlesDoc();
+    if (!doc) return;
+
+    const row = doc.tableRows[rowIndex];
+    if (!row) return;
+
+    if (!row.cells) row.cells = {};
+    const cell = row.cells[columnId] ?? createCell();
+    cell[field] = value;
+    row.cells[columnId] = cell;
+    this.renderPreview();
+  }
+
   addTableRow(): void {
-    if (!this.documentData || !this.currentDocType) return;
+    const doc = this.documentData;
+    const config = this.config();
+    if (!doc || !config) return;
 
-    if (this.currentDocType === 'cleaning') {
-      this.documentData.tableRows.push({
-        day: '',
-        date: '',
-        personnel: [],
-        tasks: []
-      } as CleaningRow);
-    } else {
-      this.documentData.tableRows.push({
-        day: '',
-        date: '',
-        opening: '',
-        zuhr: { imam: '', muezzin: '' },
-        asr: { imam: '', muezzin: '' },
-        closing: ''
-      } as PrayerRow);
-    }
-
+    pushTableRow(doc, config.makeEmptyRow(doc));
     this.renderEditor();
     this.renderPreview();
   }
 
   deleteRow(index: number): void {
-    if (!this.documentData) return;
-    if (!confirm('هل تريد حذف هذا الصف?')) return;
+    const doc = this.documentData;
+    if (!doc || !confirm('هل تريد حذف هذا الصف؟')) return;
 
-    this.documentData.tableRows.splice(index, 1);
+    doc.tableRows.splice(index, 1);
     this.renderEditor();
     this.renderPreview();
   }
 
   moveRowUp(index: number): void {
-    if (!this.documentData || index === 0) return;
-    [this.documentData.tableRows[index], this.documentData.tableRows[index - 1]] =
-      [this.documentData.tableRows[index - 1], this.documentData.tableRows[index]];
+    const rows = this.documentData?.tableRows;
+    if (!rows || index <= 0) return;
+
+    [rows[index], rows[index - 1]] = [rows[index - 1], rows[index]];
     this.renderEditor();
     this.renderPreview();
   }
 
   moveRowDown(index: number): void {
-    if (!this.documentData || index >= this.documentData.tableRows.length - 1) return;
-    [this.documentData.tableRows[index], this.documentData.tableRows[index + 1]] =
-      [this.documentData.tableRows[index + 1], this.documentData.tableRows[index]];
+    const rows = this.documentData?.tableRows;
+    if (!rows || index >= rows.length - 1) return;
+
+    [rows[index], rows[index + 1]] = [rows[index + 1], rows[index]];
     this.renderEditor();
     this.renderPreview();
   }
 
-  setPlanningMode(mode: PlanningMode): void {
+  // ----------------------------------------------------------------- planning
+
+  setPlanningMode(mode: 'period' | 'weekly'): void {
     if (!this.documentData) return;
     this.documentData.planningMode = mode;
     this.renderAll();
   }
 
   toggleWeeklyDay(day: string): void {
-    if (!this.documentData || !this.currentDocType) return;
-    const idx = this.documentData.tableRows.findIndex(r => (r as { day: string }).day === day);
-    if (idx >= 0) {
-      if (this.currentDocType === 'cleaning') {
-        const row = this.documentData.tableRows[idx] as CleaningRow;
-        if (row.personnel.length > 0 || row.tasks.length > 0) {
-          if (!confirm(`هل تريد حذف يوم ${day}?`)) return;
-        }
-      } else {
-        const row = this.documentData.tableRows[idx] as PrayerRow;
-        if (row.opening || row.zuhr.imam || row.zuhr.muezzin || row.asr.imam || row.asr.muezzin || row.closing) {
-          if (!confirm(`هل تريد حذف يوم ${day}?`)) return;
-        }
-      }
-      this.documentData.tableRows.splice(idx, 1);
+    const doc = this.documentData;
+    const config = this.config();
+    if (!doc || !config) return;
+
+    const index = doc.tableRows.findIndex(row => (row as { day: string }).day === day);
+
+    if (index >= 0) {
+      if (config.rowHasContent(doc.tableRows[index]) && !confirm(`هل تريد حذف يوم ${day}?`)) return;
+      doc.tableRows.splice(index, 1);
     } else {
-      if (this.currentDocType === 'cleaning') {
-        this.documentData.tableRows.push({ day, date: '', personnel: [], tasks: [] } as CleaningRow);
-      } else {
-        this.documentData.tableRows.push({
-          day,
-          date: '',
-          opening: '',
-          zuhr: { imam: '', muezzin: '' },
-          asr: { imam: '', muezzin: '' },
-          closing: ''
-        } as PrayerRow);
-      }
+      const row = config.makeEmptyRow(doc);
+      (row as { day: string }).day = day;
+      pushTableRow(doc, row);
     }
+
     this.renderAll();
   }
 
@@ -297,107 +299,175 @@ export class App {
   }
 
   generateDateRange(): void {
-    if (!this.documentData || !this.currentDocType) return;
+    const doc = this.documentData;
+    const config = this.config();
+    if (!doc || !config) return;
+
     if (!this.dateRangeStart || !this.dateRangeEnd) {
       alert('يرجى اختيار تاريخ البداية والنهاية');
       return;
     }
-    const parseDate = (s: string): Date | null => {
-      const parts = s.split('-').map(Number);
-      if (parts.length !== 3 || parts.some(isNaN)) return null;
-      return new Date(parts[0], parts[1] - 1, parts[2]);
-    };
-    const start = parseDate(this.dateRangeStart);
-    const end = parseDate(this.dateRangeEnd);
+
+    const start = parseIsoDate(this.dateRangeStart);
+    const end = parseIsoDate(this.dateRangeEnd);
     if (!start || !end || start > end) {
       alert('يرجى إدخال تاريخ بداية ونهاية صحيحين');
       return;
     }
-    const dayNames = ['الأحد', 'الإثنين', 'الثلاثاء', 'الأربعاء', 'الخميس', 'الجمعة', 'السبت'];
-    const rows: (CleaningRow | PrayerRow)[] = [];
+
+    const excluded = config.excludedWeekdays;
+    const rows: TableRow[] = [];
     const current = new Date(start);
+
     while (current <= end) {
-      if (current.getDay() === 5) {
-        current.setDate(current.getDate() + 1);
-        continue;
+      const weekday = current.getDay();
+
+      if (!excluded.includes(weekday)) {
+        const row = config.makeEmptyRow(doc);
+        const dayRow = row as { day: string; date: string };
+        dayRow.day = DAY_NAME_BY_INDEX[weekday] ?? '';
+        dayRow.date = `${String(current.getDate()).padStart(2, '0')}/${String(current.getMonth() + 1).padStart(2, '0')}`;
+        rows.push(row);
       }
-      const dd = String(current.getDate()).padStart(2, '0');
-      const mm = String(current.getMonth() + 1).padStart(2, '0');
-      if (this.currentDocType === 'cleaning') {
-        rows.push({
-          day: dayNames[current.getDay()],
-          date: `${dd}/${mm}`,
-          personnel: [],
-          tasks: []
-        } as CleaningRow);
-      } else {
-        rows.push({
-          day: dayNames[current.getDay()],
-          date: `${dd}/${mm}`,
-          opening: '',
-          zuhr: { imam: '', muezzin: '' },
-          asr: { imam: '', muezzin: '' },
-          closing: ''
-        } as PrayerRow);
-      }
+
       current.setDate(current.getDate() + 1);
     }
-    this.documentData.tableRows = rows;
+
+    if (rows.length === 0) {
+      alert('لا توجد أيام صالحة ضمن الفترة المحددة.');
+      return;
+    }
+
+    const hasExistingContent = doc.tableRows.some(row => config.rowHasContent(row));
+    if (hasExistingContent && !confirm('سيتم استبدال الصفوف الحالية بالأيام المولّدة. هل تريد المتابعة؟')) {
+      return;
+    }
+
+    setTableRows(doc, rows);
     this.renderAll();
   }
 
+  // ----------------------------------------------------------------- columns
+
+  addColumn(): void {
+    const doc = this.circlesDoc();
+    if (!doc) return;
+
+    const column: CircleColumn = { id: createColumnId(), title: 'حصة جديدة' };
+    doc.columns.push(column);
+
+    for (const row of doc.tableRows) {
+      if (!row.cells) row.cells = {};
+      row.cells[column.id] = createCell();
+    }
+
+    this.renderAll();
+  }
+
+  updateColumnTitle(index: number, value: string): void {
+    const doc = this.circlesDoc();
+    const column = doc?.columns[index];
+    if (!column) return;
+
+    column.title = value;
+    // Preview only: re-rendering the editor here would drop the caret mid-keystroke.
+    this.renderPreview();
+  }
+
+  deleteColumn(index: number): void {
+    const doc = this.circlesDoc();
+    const column = doc?.columns[index];
+    if (!doc || !column) return;
+
+    const hasContent = doc.tableRows.some(row => {
+      const cell = row.cells?.[column.id];
+      return Boolean(cell && (cell.lesson.trim() || cell.person.trim()));
+    });
+
+    if (hasContent && !confirm(`العمود "${column.title}" يحتوي على بيانات. هل تريد حذفه؟`)) return;
+
+    doc.columns.splice(index, 1);
+    for (const row of doc.tableRows) {
+      delete row.cells[column.id];
+    }
+
+    this.renderAll();
+  }
+
+  moveColumnUp(index: number): void {
+    const columns = this.circlesDoc()?.columns;
+    if (!columns || index <= 0) return;
+
+    [columns[index], columns[index - 1]] = [columns[index - 1], columns[index]];
+    this.renderAll();
+  }
+
+  moveColumnDown(index: number): void {
+    const columns = this.circlesDoc()?.columns;
+    if (!columns || index >= columns.length - 1) return;
+
+    [columns[index], columns[index + 1]] = [columns[index + 1], columns[index]];
+    this.renderAll();
+  }
+
+  // ------------------------------------------------------------ footer notes
+
   updateNoteField(index: number, field: string, value: unknown): void {
-    if (!this.documentData) return;
-    const note = this.documentData.footerNotes[index] as unknown as Record<string, unknown>;
+    const doc = this.documentData;
+    if (!doc) return;
+
+    const note = doc.footerNotes[index] as unknown as Record<string, unknown>;
     note[field] = value;
     this.renderPreview();
   }
 
   addFooterNote(): void {
-    if (!this.documentData) return;
+    const doc = this.documentData;
+    if (!doc) return;
 
-    this.documentData.footerNotes.push({
-      title: 'ملاحظة جديدة',
-      content: '',
-      isVerse: false
-    });
-
+    doc.footerNotes.push({ title: 'ملاحظة جديدة', content: '', isVerse: false });
     this.renderEditor();
     this.renderPreview();
   }
 
   deleteNote(index: number): void {
-    if (!this.documentData) return;
-    if (!confirm('هل تريد حذف هذه الملاحظة?')) return;
+    const doc = this.documentData;
+    if (!doc || !confirm('هل تريد حذف هذه الملاحظة؟')) return;
 
-    this.documentData.footerNotes.splice(index, 1);
+    doc.footerNotes.splice(index, 1);
     this.renderEditor();
     this.renderPreview();
   }
 
   moveNoteUp(index: number): void {
-    if (!this.documentData || index === 0) return;
-    [this.documentData.footerNotes[index], this.documentData.footerNotes[index - 1]] =
-      [this.documentData.footerNotes[index - 1], this.documentData.footerNotes[index]];
+    const notes = this.documentData?.footerNotes;
+    if (!notes || index <= 0) return;
+
+    [notes[index], notes[index - 1]] = [notes[index - 1], notes[index]];
     this.renderEditor();
     this.renderPreview();
   }
 
   moveNoteDown(index: number): void {
-    if (!this.documentData || index >= this.documentData.footerNotes.length - 1) return;
-    [this.documentData.footerNotes[index], this.documentData.footerNotes[index + 1]] =
-      [this.documentData.footerNotes[index + 1], this.documentData.footerNotes[index]];
+    const notes = this.documentData?.footerNotes;
+    if (!notes || index >= notes.length - 1) return;
+
+    [notes[index], notes[index + 1]] = [notes[index + 1], notes[index]];
     this.renderEditor();
     this.renderPreview();
   }
 
   applyTemplate(index: number, templateKey: string): void {
-    if (!this.documentData || !templateKey || !noteTemplates[templateKey]) return;
+    const doc = this.documentData;
+    const template = templateKey ? noteTemplates[templateKey] : undefined;
+    if (!doc || !template) return;
 
-    this.documentData.footerNotes[index] = { ...noteTemplates[templateKey] };
+    doc.footerNotes[index] = { ...template };
     this.renderEditor();
     this.renderPreview();
   }
+
+  // ----------------------------------------------------------------- render
 
   private renderAll(): void {
     this.renderEditor();
@@ -405,184 +475,146 @@ export class App {
   }
 
   private renderEditor(): void {
-    if (!this.documentData || !this.currentDocType) return;
+    const doc = this.documentData;
+    const type = this.currentDocType;
+    if (!doc || !type) return;
 
     this.selectedMember = null;
 
     const headerSection = document.getElementById('headerSection');
     if (headerSection) {
-      headerSection.innerHTML = renderHeaderEditor(this.documentData.header, () => this.renderPreview());
+      headerSection.innerHTML = renderHeaderEditor(doc.header, () => this.renderPreview());
     }
 
     const infoBoxFields = document.getElementById('infoBoxFields');
     if (infoBoxFields) {
-      infoBoxFields.innerHTML = renderInfoBoxEditor(this.currentDocType, this.documentData.infoBox, () => this.renderPreview());
+      infoBoxFields.innerHTML = renderInfoBoxEditor(type, doc.infoBox, () => this.renderPreview());
     }
 
-    const cleaningModeSection = document.getElementById('cleaningModeSection');
-    if (cleaningModeSection && this.currentDocType) {
-      const mode = (this.documentData as DocumentData & { planningMode: PlanningMode }).planningMode;
-      cleaningModeSection.innerHTML = `
-        <div class="cleaning-mode-toggle">
-          <button class="mode-btn ${mode === 'period' ? 'active' : ''}" onclick="window.app.setPlanningMode('period')">📅 برنامج بمدة</button>
-          <button class="mode-btn ${mode === 'weekly' ? 'active' : ''}" onclick="window.app.setPlanningMode('weekly')">📋 برنامج أسبوعي</button>
-        </div>
-        ${mode === 'period' ? `
-          <div class="date-range-picker">
-            <input type="date" id="dateRangeStart" placeholder="تاريخ البداية" value="${this.escapeHtml(this.dateRangeStart)}" onchange="window.app.setDateRangeStart(this.value)">
-            <input type="date" id="dateRangeEnd" placeholder="تاريخ النهاية" value="${this.escapeHtml(this.dateRangeEnd)}" onchange="window.app.setDateRangeEnd(this.value)">
-            <button class="btn-add" onclick="window.app.generateDateRange()">توليد الأيام</button>
-          </div>
-        ` : ''}
-      `;
-    } else if (cleaningModeSection) {
-      cleaningModeSection.innerHTML = '';
+    const columnsSection = document.getElementById('columnsSection');
+    const columnsEditor = document.getElementById('columnsEditor');
+    if (columnsSection && columnsEditor) {
+      const isCircles = doc.type === 'circles';
+      columnsSection.style.display = isCircles ? '' : 'none';
+      columnsEditor.innerHTML = isCircles ? renderColumnsEditor(doc.columns) : '';
+    }
+
+    const modeSection = document.getElementById('cleaningModeSection');
+    if (modeSection) {
+      modeSection.innerHTML = this.renderPlanningModeSection();
     }
 
     const tableRowsEditor = document.getElementById('tableRowsEditor');
     if (tableRowsEditor) {
-      const mode = (this.documentData as DocumentData & { planningMode: PlanningMode }).planningMode;
-      tableRowsEditor.innerHTML = renderTableRowsEditor(this.currentDocType, this.documentData.tableRows, () => this.renderPreview(), mode);
+      const columns = doc.type === 'circles' ? doc.columns : [];
+      tableRowsEditor.innerHTML = renderTableRowsEditor(type, doc.tableRows, () => this.renderPreview(), doc.planningMode, columns);
     }
 
     const footerNotesEditor = document.getElementById('footerNotesEditor');
     if (footerNotesEditor) {
-      footerNotesEditor.innerHTML = renderFooterNotesEditor(this.documentData.footerNotes, () => this.renderPreview());
+      footerNotesEditor.innerHTML = renderFooterNotesEditor(doc.footerNotes, () => this.renderPreview());
     }
 
     this.renderMembersList();
   }
 
-  private setupTableEventListeners(): void {
-    const tableEditor = document.getElementById('tableRowsEditor');
-    if (tableEditor) {
-      tableEditor.addEventListener('click', (e: Event) => {
-        const btn = (e.target as HTMLElement).closest('[data-index]') as HTMLElement | null;
-        if (!btn) return;
-        const index = parseInt(btn.dataset.index ?? '', 10);
-        if (isNaN(index)) return;
-        const action = btn.dataset.action ?? 'delete';
-        if (action === 'delete') {
-          this.deleteRow(index);
-        } else if (action === 'moveUp') {
-          this.moveRowUp(index);
-        } else if (action === 'moveDown') {
-          this.moveRowDown(index);
-        }
-      });
-    }
+  private renderPlanningModeSection(): string {
+    const doc = this.documentData;
+    if (!doc) return '';
 
-    const footerEditor = document.getElementById('footerNotesEditor');
-    if (footerEditor) {
-      footerEditor.addEventListener('click', (e: Event) => {
-        const btn = (e.target as HTMLElement).closest('[data-index]') as HTMLElement | null;
-        if (!btn) return;
-        const index = parseInt(btn.dataset.index ?? '', 10);
-        if (isNaN(index)) return;
-        const action = btn.dataset.action ?? 'delete';
-        if (action === 'delete') {
-          this.deleteNote(index);
-        } else if (action === 'moveUp') {
-          this.moveNoteUp(index);
-        } else if (action === 'moveDown') {
-          this.moveNoteDown(index);
-        }
-      });
-    }
+    const mode = doc.planningMode ?? 'period';
+
+    return `
+      <div class="cleaning-mode-toggle">
+        <button class="mode-btn ${mode === 'period' ? 'active' : ''}" onclick="window.app.setPlanningMode('period')">📅 برنامج بمدة</button>
+        <button class="mode-btn ${mode === 'weekly' ? 'active' : ''}" onclick="window.app.setPlanningMode('weekly')">📋 برنامج أسبوعي</button>
+      </div>
+      ${
+        mode === 'period'
+          ? `
+        <div class="date-range-picker">
+          <input type="date" id="dateRangeStart" value="${escapeHtml(this.dateRangeStart)}" onchange="window.app.setDateRangeStart(this.value)">
+          <input type="date" id="dateRangeEnd" value="${escapeHtml(this.dateRangeEnd)}" onchange="window.app.setDateRangeEnd(this.value)">
+          <button class="btn-add" onclick="window.app.generateDateRange()">توليد الأيام</button>
+        </div>
+      `
+          : ''
+      }
+    `;
+  }
+
+  private setupTableEventListeners(): void {
+    delegateRowActions('tableRowsEditor', action => {
+      if (action.action === 'delete') this.deleteRow(action.index);
+      else if (action.action === 'moveUp') this.moveRowUp(action.index);
+      else if (action.action === 'moveDown') this.moveRowDown(action.index);
+    });
+
+    delegateRowActions('footerNotesEditor', action => {
+      if (action.action === 'delete') this.deleteNote(action.index);
+      else if (action.action === 'moveUp') this.moveNoteUp(action.index);
+      else if (action.action === 'moveDown') this.moveNoteDown(action.index);
+    });
+
+    delegateRowActions('columnsEditor', action => {
+      if (action.action === 'colDelete') this.deleteColumn(action.index);
+      else if (action.action === 'colUp') this.moveColumnUp(action.index);
+      else if (action.action === 'colDown') this.moveColumnDown(action.index);
+    });
   }
 
   private renderMembersList(): void {
     const membersList = document.getElementById('membersList');
     if (!membersList) return;
 
-    if (!this.documentData || !this.currentDocType) {
+    const config = this.config();
+    if (!this.documentData || !this.currentDocType || !config?.features.members) {
       membersList.innerHTML = '';
       return;
     }
 
-    let personnel: string[] = [];
-    if (this.currentDocType === 'cleaning') {
-      personnel = this.extractCleaningPersonnel();
-    } else {
-      personnel = this.extractPrayerPersonnel();
-    }
-
+    const personnel = this.extractPersonnel();
     if (personnel.length === 0) {
-      membersList.innerHTML = '<p style="color: #888; font-size: 13px;">لا يوجد أفراد</p>';
+      membersList.innerHTML = '<p class="hint-text">لا يوجد أفراد</p>';
       return;
     }
 
-    let html = personnel.map(person => `
-      <div class="member-tag ${this.selectedMember === person ? 'active' : ''}" onclick="window.app.previewMember('${this.escapeHtml(person)}')">
-        ${this.escapeHtml(person)}
-      </div>
-    `).join('');
+    let html = personnel
+      .map(
+        person => `
+      <div class="member-tag ${this.selectedMember === person ? 'active' : ''}" data-person="${escapeHtml(person)}" role="button" tabindex="0" onclick="window.app.previewMember(this.dataset.person)" onkeydown="if(event.key==='Enter'||event.key===' '){window.app.previewMember(this.dataset.person)}">
+        ${escapeHtml(person)}
+      </div>`
+      )
+      .join('');
 
     if (this.selectedMember) {
-      html += `<button class="btn-clear-preview" onclick="window.app.clearMemberPreview()">↺ العودة للوثيقة الكاملة</button>`;
+      html += '<button class="btn-clear-preview" onclick="window.app.clearMemberPreview()">↺ العودة للوثيقة الكاملة</button>';
     }
 
     membersList.innerHTML = html;
   }
 
-  previewMember(personName: string): void {
-    if (!this.documentData || !this.currentDocType) return;
-
-    this.selectedMember = personName;
-    this.renderMembersList();
-
-    const previewPage = document.getElementById('previewPage');
-    if (!previewPage) return;
-
-    previewPage.style.minHeight = 'auto';
-    previewPage.style.backgroundColor = 'white';
-    previewPage.className = '';
-
-    previewPage.innerHTML = '';
-
-    let html = '';
-    if (this.currentDocType === 'cleaning') {
-      const rows = this.filterRowsForPerson(personName);
-      const mode = (this.documentData as DocumentData & { planningMode: PlanningMode }).planningMode;
-      html = this.renderIndividualProgram(personName, rows, mode);
-    } else {
-      const rows = this.filterPrayerRowsForPerson(personName);
-      html = this.renderPrayerIndividualProgram(personName, rows);
-    }
-
-    previewPage.innerHTML = html;
-  }
-
-  clearMemberPreview(): void {
-    this.selectedMember = null;
-    this.renderMembersList();
-
-    const previewPage = document.getElementById('previewPage');
-    if (previewPage) {
-      previewPage.style.minHeight = '';
-      previewPage.style.backgroundColor = '';
-    }
-
-    this.renderPreview();
-  }
-
   private renderPreview(): void {
-    if (!this.documentData || !this.currentDocType) return;
+    const doc = this.documentData;
+    const type = this.currentDocType;
+    if (!doc || !type) return;
 
     const page = document.getElementById('previewPage');
     if (!page) return;
 
-    if (this.selectedMember) {
-      return;
-    }
+    if (this.selectedMember) return;
 
+    const config = getDocTypeConfig(type);
     page.style.minHeight = '';
-    page.className = 'a4-page';
+    page.className = `a4-page ${config.pageClass}`;
 
-    let html = renderDocHeader(this.documentData.header);
-    html += renderInfoBox(this.currentDocType, this.documentData.infoBox);
-    html += renderTable(this.currentDocType, this.documentData.tableRows, (this.documentData as DocumentData & { planningMode: PlanningMode }).planningMode);
-    html += renderFooter(this.documentData.footerNotes);
+    const columns = doc.type === 'circles' ? doc.columns : [];
+
+    let html = renderDocHeader(doc.header);
+    html += renderInfoBox(type, doc.infoBox);
+    html += renderTable(type, doc.tableRows, doc.planningMode, columns);
+    html += renderFooter(doc.footerNotes);
 
     page.innerHTML = html;
 
@@ -594,6 +626,8 @@ export class App {
       saveDocumentData(this.currentDocType, this.documentData);
     }
   }
+
+  // ------------------------------------------------------------------ export
 
   async exportToPDF(): Promise<void> {
     try {
@@ -628,10 +662,7 @@ export class App {
       }
 
       const canvas = await html2canvas(page, { scale: 1.2 });
-      const link = document.createElement('a');
-      link.download = `${this.documentData?.header.title || 'document'}.png`;
-      link.href = canvas.toDataURL('image/png');
-      link.click();
+      downloadBlob(await canvasToBlob(canvas, 'image/png'), `${this.documentData?.header.title || 'document'}.png`);
     } catch (error) {
       alert('فشل تصدير الصورة. يرجى المحاولة مرة أخرى.');
       console.error('Image export error:', error);
@@ -639,13 +670,19 @@ export class App {
   }
 
   async exportIndividualPrograms(): Promise<void> {
-    if (!this.documentData || !this.currentDocType) {
+    const config = this.config();
+    if (!this.documentData || !config) {
       alert('الرجاء اختيار نوع الوثيقة أولاً');
       return;
     }
 
+    if (!config.features.individualExport) {
+      alert('تصدير برامج الأفراد غير متاح لهذا النوع من الوثائق.');
+      return;
+    }
+
     try {
-      if (this.currentDocType === 'cleaning') {
+      if (config.id === 'cleaning') {
         await this.exportCleaningIndividualPrograms();
       } else {
         await this.exportPrayerIndividualPrograms();
@@ -657,9 +694,10 @@ export class App {
   }
 
   private async exportCleaningIndividualPrograms(): Promise<void> {
-    if (!this.documentData) return;
+    const doc = this.documentData;
+    if (!doc) return;
 
-    const personnelList = this.extractCleaningPersonnel();
+    const personnelList = this.extractPersonnel();
     if (personnelList.length === 0) {
       alert('لا يوجد أشخاص في الجدول');
       return;
@@ -667,27 +705,26 @@ export class App {
 
     const zip = new window.JSZip();
 
-    const mode = (this.documentData as DocumentData & { planningMode: PlanningMode }).planningMode;
     for (const person of personnelList) {
       try {
         const personRows = this.filterRowsForPerson(person);
-        const html = this.renderIndividualProgram(person, personRows, mode);
-        const imageBlob = await this.generateImageBlob(html);
-        zip.file(`${person}.png`, imageBlob);
+        const imageBlob = await this.generateImageBlob(this.renderIndividualProgram(person, personRows, doc.planningMode));
+        zip.file(`${person}.jpg`, imageBlob);
       } catch (error) {
         console.error(`Failed to export for ${person}:`, error);
       }
     }
 
     const content = await zip.generateAsync({ type: 'blob' });
-    this.downloadBlob(content, 'برامج_الأفراد.zip');
+    downloadBlob(content, 'برامج_الأفراد.zip');
     alert(`تم تصدير ${personnelList.length} برنامج بنجاح`);
   }
 
   private async exportPrayerIndividualPrograms(): Promise<void> {
-    if (!this.documentData) return;
+    const doc = this.documentData;
+    if (!doc) return;
 
-    const personnelList = this.extractPrayerPersonnel();
+    const personnelList = this.extractPersonnel();
     if (personnelList.length === 0) {
       alert('لا يوجد أشخاص في الجدول');
       return;
@@ -697,17 +734,15 @@ export class App {
 
     for (const person of personnelList) {
       try {
-        const personRows = this.filterPrayerRowsForPerson(person);
-        const html = this.renderPrayerIndividualProgram(person, personRows);
-        const imageBlob = await this.generateImageBlob(html);
-        zip.file(`${person}.png`, imageBlob);
+        const imageBlob = await this.generateImageBlob(this.renderPrayerIndividualProgram(person, this.filterPrayerRowsForPerson(person)));
+        zip.file(`${person}.jpg`, imageBlob);
       } catch (error) {
         console.error(`Failed to export for ${person}:`, error);
       }
     }
 
     const content = await zip.generateAsync({ type: 'blob' });
-    this.downloadBlob(content, 'برامج_الأفراد.zip');
+    downloadBlob(content, 'برامج_الأفراد.zip');
     alert(`تم تصدير ${personnelList.length} برنامج بنجاح`);
   }
 
@@ -719,33 +754,44 @@ export class App {
     tempDiv.style.width = '210mm';
     document.body.appendChild(tempDiv);
 
-    const a4Page = tempDiv.querySelector('.a4-page') as HTMLElement;
+    const a4Page = tempDiv.querySelector('.a4-page') as HTMLElement | null;
+    if (!a4Page) {
+      document.body.removeChild(tempDiv);
+      throw new Error('Preview markup missing');
+    }
     a4Page.style.backgroundColor = 'white';
 
     try {
       const canvas = await html2canvas(a4Page, { scale: 2, useCORS: true, backgroundColor: '#ffffff' });
-      const dataUrl = canvas.toDataURL('image/jpeg', 0.9);
-      const base64 = dataUrl.split(',')[1];
-      const binaryString = atob(base64);
-      const bytes = new Uint8Array(binaryString.length);
-      for (let i = 0; i < binaryString.length; i++) {
-        bytes[i] = binaryString.charCodeAt(i);
-      }
-      return new Blob([bytes], { type: 'image/jpeg' });
+      return canvasToBlob(canvas, 'image/jpeg', 0.9);
     } finally {
       document.body.removeChild(tempDiv);
     }
   }
 
-  private extractCleaningPersonnel(): string[] {
-    if (!this.documentData) return [];
+  // ----------------------------------------------------------------- members
 
+  private extractPersonnel(): string[] {
+    const doc = this.documentData;
+    const type = this.currentDocType;
+    if (!doc || !type) return [];
+
+    switch (type) {
+      case 'cleaning':
+        return this.extractCleaningPersonnel(doc.tableRows as CleaningRow[]);
+      case 'prayer':
+        return this.extractPrayerPersonnel(doc.tableRows as PrayerRow[]);
+      default:
+        return [];
+    }
+  }
+
+  private extractCleaningPersonnel(rows: CleaningRow[]): string[] {
     const personnelSet = new Set<string>();
 
-    for (const row of this.documentData.tableRows) {
-      const cleaningRow = row as CleaningRow;
-      for (const p of cleaningRow.personnel) {
-        const trimmed = p.trim();
+    for (const row of rows) {
+      for (const person of row.personnel ?? []) {
+        const trimmed = person.trim();
         if (trimmed && trimmed !== 'المتوفر' && trimmed !== '-') {
           personnelSet.add(trimmed);
         }
@@ -755,189 +801,108 @@ export class App {
     return Array.from(personnelSet).sort();
   }
 
-  private extractPrayerPersonnel(): string[] {
-    if (!this.documentData) return [];
-
+  private extractPrayerPersonnel(rows: PrayerRow[]): string[] {
     const personnelSet = new Set<string>();
 
-    for (const row of this.documentData.tableRows) {
-      const prayerRow = row as PrayerRow;
+    const add = (name: string | undefined): void => {
+      const trimmed = name?.trim();
+      if (trimmed && trimmed !== 'المتوفر') personnelSet.add(trimmed);
+    };
 
-      for (const name of prayerRow.opening.split(' ')) {
-        if (name.trim() && name.trim() !== 'المتوفر') {
-          personnelSet.add(name.trim());
-        }
-      }
-
-      if (prayerRow.zuhr.imam && prayerRow.zuhr.imam !== 'المتوفر') {
-        personnelSet.add(prayerRow.zuhr.imam);
-      }
-      if (prayerRow.zuhr.muezzin && prayerRow.zuhr.muezzin !== 'المتوفر') {
-        personnelSet.add(prayerRow.zuhr.muezzin);
-      }
-
-      if (prayerRow.asr.imam && prayerRow.asr.imam !== 'المتوفر') {
-        personnelSet.add(prayerRow.asr.imam);
-      }
-      if (prayerRow.asr.muezzin && prayerRow.asr.muezzin !== 'المتوفر') {
-        personnelSet.add(prayerRow.asr.muezzin);
-      }
-
-      for (const name of prayerRow.closing.split(' ')) {
-        if (name.trim() && name.trim() !== 'المتوفر') {
-          personnelSet.add(name.trim());
-        }
-      }
+    for (const row of rows) {
+      for (const name of (row.opening ?? '').split(' ')) add(name);
+      add(row.zuhr?.imam);
+      add(row.zuhr?.muezzin);
+      add(row.asr?.imam);
+      add(row.asr?.muezzin);
+      for (const name of (row.closing ?? '').split(' ')) add(name);
     }
 
     return Array.from(personnelSet).sort();
   }
 
   private filterRowsForPerson(personName: string): CleaningRow[] {
-    if (!this.documentData) return [];
+    const doc = this.documentData;
+    if (!doc) return [];
 
-    return (this.documentData.tableRows as CleaningRow[])
-      .filter(row => row.personnel.includes(personName))
+    return (doc.tableRows as CleaningRow[])
+      .filter(row => row.personnel?.includes(personName))
       .map(row => {
         const personIdx = row.personnel.indexOf(personName);
-        let personTasks: string[];
-        if (personIdx >= 0 && row.tasks.length === row.personnel.length) {
-          personTasks = [row.tasks[personIdx]];
-        } else {
-          personTasks = row.tasks.filter(t => t.trim() !== '');
-        }
-        return {
-          day: row.day,
-          date: row.date,
-          personnel: row.personnel,
-          tasks: personTasks
-        };
-      }) as CleaningRow[];
+        const personTasks =
+          personIdx >= 0 && row.tasks.length === row.personnel.length
+            ? [row.tasks[personIdx]]
+            : row.tasks.filter(task => task.trim() !== '');
+        return { ...row, tasks: personTasks };
+      });
   }
 
   private filterPrayerRowsForPerson(personName: string): PrayerRow[] {
-    if (!this.documentData) return [];
+    const doc = this.documentData;
+    if (!doc) return [];
 
-    return (this.documentData.tableRows as PrayerRow[])
+    return (doc.tableRows as PrayerRow[])
       .filter(row => {
-        const openingNames = row.opening.split(' ').map(n => n.trim());
-        const closingNames = row.closing.split(' ').map(n => n.trim());
-
+        const opening = (row.opening ?? '').split(' ').map(n => n.trim());
+        const closing = (row.closing ?? '').split(' ').map(n => n.trim());
         return (
-          openingNames.includes(personName) ||
-          closingNames.includes(personName) ||
-          row.zuhr.imam === personName ||
-          row.zuhr.muezzin === personName ||
-          row.asr.imam === personName ||
-          row.asr.muezzin === personName
+          opening.includes(personName) ||
+          closing.includes(personName) ||
+          row.zuhr?.imam === personName ||
+          row.zuhr?.muezzin === personName ||
+          row.asr?.imam === personName ||
+          row.asr?.muezzin === personName
         );
       })
-      .map(row => ({
-        day: row.day,
-        date: row.date,
-        opening: row.opening,
-        zuhr: row.zuhr,
-        asr: row.asr,
-        closing: row.closing
-      }));
+      .map(row => ({ ...row }));
   }
 
-  private renderPrayerIndividualProgram(personName: string, rows: PrayerRow[]): string {
-    if (!this.documentData) return '';
-    const header = this.documentData.header;
+  previewMember(personName: string): void {
+    const doc = this.documentData;
+    const config = this.config();
+    if (!doc || !config?.features.members) return;
 
-    return `
-      <div class="a4-page">
-        <div class="doc-header">
-          <div class="doc-logo">
-            <svg width="50" height="50" viewBox="0 0 60 60" fill="none" xmlns="http://www.w3.org/2000/svg">
-              <rect width="60" height="60" rx="8" fill="#243245"/>
-              <path d="M42.7626 50.8839V54.9995H27.8633V29.8248C27.8633 25.9693 29.2212 22.3202 31.677 19.5207C33.0075 17.9981 34.5719 16.695 36.3558 15.6104C37.289 16.6258 38.1804 17.7237 38.9345 18.8764C37.3164 19.7952 35.9167 20.9205 34.764 22.251C32.9669 24.282 31.9789 26.9704 31.9789 29.8248V50.8839H42.7626Z" fill="#0DE9C3"/>
-              <path d="M44.6279 54.9999H40.5123V23.4434C40.5123 22.2179 40.208 21.033 39.6328 20.0175C37.053 15.4603 32.1961 11.581 30.0007 9.97362C27.8051 11.5846 22.9389 15.4735 20.3662 20.0175C19.791 21.033 19.4867 22.2179 19.4867 23.4434V54.9999H15.3711V23.4434C15.3711 21.5079 15.8603 19.6225 16.7839 17.9889C20.6561 11.1502 28.5401 5.95344 28.873 5.73506L29.9983 5L31.1236 5.73506C31.4577 5.95224 39.3405 11.1502 43.2127 17.9889C44.1375 19.6213 44.6255 21.5079 44.6255 23.4434V54.9999H44.6279Z" fill="white"/>
-            </svg>
-          </div>
-          <div class="doc-title">
-            <h1>${this.escapeHtml(header.title)} - ${this.escapeHtml(personName)}</h1>
-            <p>${this.escapeHtml(header.subtitle)}</p>
-          </div>
-          <div class="doc-version">${this.escapeHtml(header.version)}</div>
-        </div>
-        <div class="info-box">
-          <h2>جدول مهام ${this.escapeHtml(personName)}</h2>
-          <div class="info-items">
-            <div class="info-item"><span>عدد الأيام:</span><span>${rows.length}</span></div>
-          </div>
-        </div>
-        <table class="doc-table">
-          <thead>
-            <tr>
-              <th style="width: 12%">التاريخ</th>
-              <th style="width: 22%">الفتح</th>
-              <th style="width: 22%">الظهر</th>
-              <th style="width: 22%">العصر</th>
-              <th style="width: 22%">الغلق</th>
-            </tr>
-          </thead>
-          <tbody>
-            ${rows.map(row => `
-              <tr>
-                <td class="date-cell">
-                  ${row.day ? `<div class="day">${this.escapeHtml(row.day)}</div>` : ''}
-                  ${row.date ? `<div class="date">${this.escapeHtml(row.date)}</div>` : ''}
-                </td>
-                <td>${this.highlightPerson(row.opening, personName)}</td>
-                <td>${this.renderPrayerDuty(row.zuhr, personName)}</td>
-                <td>${this.renderPrayerDuty(row.asr, personName)}</td>
-                <td>${this.highlightPerson(row.closing, personName)}</td>
-              </tr>
-            `).join('')}
-          </tbody>
-        </table>
-      </div>
-    `;
+    this.selectedMember = personName;
+    this.renderMembersList();
+
+    const previewPage = document.getElementById('previewPage');
+    if (!previewPage) return;
+
+    previewPage.style.minHeight = 'auto';
+    previewPage.style.backgroundColor = 'white';
+    previewPage.className = '';
+
+    const html =
+      config.id === 'cleaning'
+        ? this.renderIndividualProgram(personName, this.filterRowsForPerson(personName), doc.planningMode)
+        : this.renderPrayerIndividualProgram(personName, this.filterPrayerRowsForPerson(personName));
+
+    previewPage.innerHTML = html;
   }
 
-  private highlightPerson(cell: string, personName: string): string {
-    const names = cell.split(' ').map(n => n.trim()).filter(Boolean);
-    const isAssigned = names.includes(personName);
-    const displayHtml = names.length > 0 ? names.join('، ') : '-';
-    return isAssigned ? `<strong style="color: var(--primary);">${displayHtml}</strong>` : displayHtml;
-  }
+  clearMemberPreview(): void {
+    this.selectedMember = null;
+    this.renderMembersList();
 
-  private renderPrayerDuty(slot: { imam: string; muezzin: string }, personName: string): string {
-    const parts: string[] = [];
-    if (slot.imam === personName) {
-      parts.push(`<strong style="color: var(--primary);">الإمام: ${this.escapeHtml(slot.imam)}</strong>`);
-    } else if (slot.imam) {
-      parts.push(`الإمام: ${this.escapeHtml(slot.imam)}`);
+    const previewPage = document.getElementById('previewPage');
+    if (previewPage) {
+      previewPage.style.minHeight = '';
+      previewPage.style.backgroundColor = '';
     }
 
-    if (slot.muezzin === personName) {
-      parts.push(`<strong style="color: var(--secondary);">المؤذن: ${this.escapeHtml(slot.muezzin)}</strong>`);
-    } else if (slot.muezzin) {
-      parts.push(`المؤذن: ${this.escapeHtml(slot.muezzin)}`);
-    }
-
-    return parts.length > 0 ? parts.join('<br>') : '-';
+    this.renderPreview();
   }
 
-  private downloadBlob(blob: Blob, filename: string): void {
-    const link = document.createElement('a');
-    link.href = URL.createObjectURL(blob);
-    link.download = filename;
-    link.click();
-    URL.revokeObjectURL(link.href);
-  }
+  // ------------------------------------------------------------------ import
 
   handleFileImport(event: Event): void {
     const input = event.target as HTMLInputElement;
     const file = input.files?.[0];
     if (!file) return;
 
-    const fileName = file.name.toLowerCase();
-    if (fileName.endsWith('.csv')) {
+    if (file.name.toLowerCase().endsWith('.csv')) {
       this.parseCSV(file);
-    } else if (fileName.endsWith('.xlsx') || fileName.endsWith('.xls')) {
+    } else if (/\.(xlsx|xls)$/.test(file.name.toLowerCase())) {
       this.parseExcel(file);
     } else {
       alert('يرجى اختيار ملف CSV أو Excel');
@@ -964,46 +929,60 @@ export class App {
   }
 
   private parseExcel(file: File): void {
-    try {
-      const reader = new FileReader();
-      reader.onload = (e) => {
-        try {
-          const data = e.target?.result;
-          if (!data) {
-            alert('فشل قراءة الملف');
-            return;
-          }
+    const reader = new FileReader();
 
-          const workbook = window.XLSX.read(data, { type: 'binary' });
-          const firstSheet = workbook.SheetNames[0];
-          const jsonData = window.XLSX.utils.sheet_to_json(workbook.Sheets[firstSheet]);
-
-          if (!jsonData || jsonData.length === 0) {
-            alert('الملف فارغ أو لا يحتوي على بيانات');
-            return;
-          }
-
-          const headers = Object.keys(jsonData[0] as object);
-          const rows = (jsonData as object[]).map(row => headers.map(h => (row as Record<string, unknown>)[h] as string));
-          this.processImportedData([headers, ...rows]);
-        } catch (parseError) {
-          alert('حدث خطأ أثناء تحليل الملف. يرجى التأكد من صحة التنسيق.');
-          console.error('Excel parse error:', parseError);
+    reader.onload = event => {
+      try {
+        const data = (event.target as FileReader).result;
+        if (!data) {
+          alert('فشل قراءة الملف');
+          return;
         }
-      };
-      reader.onerror = () => {
-        alert('فشل قراءة الملف');
-        console.error('FileReader error');
-      };
-      reader.readAsBinaryString(file);
-    } catch (error) {
-      alert('حدث خطأ غير متوقع');
-      console.error('Excel parse error:', error);
-    }
+
+        const workbook = window.XLSX.read(data, { type: 'binary' });
+        const firstSheet = workbook.SheetNames[0];
+        const jsonData = window.XLSX.utils.sheet_to_json(workbook.Sheets[firstSheet]);
+
+        if (!jsonData || jsonData.length === 0) {
+          alert('الملف فارغ أو لا يحتوي على بيانات');
+          return;
+        }
+
+        const headers = Object.keys(jsonData[0] as object);
+        const rows = (jsonData as object[]).map(row =>
+          headers.map(header => String((row as Record<string, unknown>)[header] ?? ''))
+        );
+        this.processImportedData([headers, ...rows]);
+      } catch (parseError) {
+        alert('حدث خطأ أثناء تحليل الملف. يرجى التأكد من صحة التنسيق.');
+        console.error('Excel parse error:', parseError);
+      }
+    };
+
+    reader.onerror = () => {
+      alert('فشل قراءة الملف');
+      console.error('FileReader error');
+    };
+
+    reader.readAsBinaryString(file);
   }
 
   private processImportedData(data: string[][]): void {
-    if (!this.documentData || !this.currentDocType || data.length < 2) {
+    const doc = this.documentData;
+    const type = this.currentDocType;
+    const config = this.config();
+
+    if (!doc || !type || !config) {
+      alert('الملف فارغ أو غير صالح');
+      return;
+    }
+
+    if (!config.features.import) {
+      alert('استيراد البيانات غير مدعوم لهذا النوع من الوثائق.');
+      return;
+    }
+
+    if (data.length < 2) {
       alert('الملف فارغ أو غير صالح');
       return;
     }
@@ -1011,7 +990,7 @@ export class App {
     const headers = data[0].map(h => h.trim().toLowerCase());
     const rows = data.slice(1).filter(row => row.some(cell => cell.trim()));
 
-    if (this.currentDocType === 'cleaning') {
+    if (type === 'cleaning') {
       this.importCleaningData(headers, rows);
     } else {
       this.importPrayerData(rows);
@@ -1026,128 +1005,65 @@ export class App {
     const personnelIdx = headers.findIndex(h => h.includes('مكلف') || h.includes('person') || h.includes('اسم'));
     const tasksIdx = headers.findIndex(h => h.includes('مهم') || h.includes('task') || h.includes('عمل'));
 
-    const tableRows: CleaningRow[] = rows.map(row => ({
-      day: dayIdx >= 0 ? row[dayIdx]?.trim() || '' : '',
-      date: dateIdx >= 0 ? row[dateIdx]?.trim() || '' : '',
-      personnel: personnelIdx >= 0 ? row[personnelIdx]?.split(/[,،\n\r]+/).map(p => p.trim()).filter(Boolean) || [] : [],
-      tasks: tasksIdx >= 0 ? row[tasksIdx]?.split(/[,،\n\r]+/).map(t => t.trim()).filter(Boolean) || [] : []
-    })).filter(row => row.day || row.date || row.personnel.length || row.tasks.length);
+    const tableRows = rows
+      .map(row => ({
+        day: dayIdx >= 0 ? row[dayIdx]?.trim() || '' : '',
+        date: dateIdx >= 0 ? row[dateIdx]?.trim() || '' : '',
+        personnel: personnelIdx >= 0 ? splitList(row[personnelIdx]) : [],
+        tasks: tasksIdx >= 0 ? splitList(row[tasksIdx]) : []
+      }))
+      .filter(row => row.day || row.date || row.personnel.length || row.tasks.length);
 
-    if (tableRows.length > 0 && this.documentData) {
-      this.documentData.tableRows = tableRows;
-      const hasDates = tableRows.some(r => r.date && r.date.trim());
-      (this.documentData as { planningMode: PlanningMode }).planningMode = hasDates ? 'period' : 'weekly';
-    }
+    if (tableRows.length === 0 || !this.documentData) return;
+
+    setTableRows(this.documentData, tableRows);
+    this.documentData.planningMode = tableRows.some(row => Boolean(row.date)) ? 'period' : 'weekly';
   }
 
   private importPrayerData(rows: string[][]): void {
-    const tableRows: PrayerRow[] = rows.map(row => {
-      const dayDateCell = row[0]?.trim() || '';
-      const openingCell = row[1]?.trim() || '';
-      const zuhrCell = row[2]?.trim() || '';
-      const asrCell = row[3]?.trim() || '';
-      const closingCell = row[4]?.trim() || '';
+    const tableRows = rows
+      .map(row => {
+        const { day, date } = this.parseDayDate(row[0]?.trim() || '');
+        return {
+          day,
+          date,
+          opening: normalizeNames(row[1]),
+          zuhr: parsePrayerSlot(row[2]),
+          asr: parsePrayerSlot(row[3]),
+          closing: normalizeNames(row[4])
+        };
+      })
+      .filter(row => row.day || row.date || row.opening || row.closing || row.zuhr.imam || row.zuhr.muezzin || row.asr.imam || row.asr.muezzin);
 
-      const { day, date } = this.parseDayDate(dayDateCell);
-      const opening = this.parseSimpleNames(openingCell);
-      const closing = this.parseSimpleNames(closingCell);
-      const zuhr = this.parsePrayerSlot(zuhrCell);
-      const asr = this.parsePrayerSlot(asrCell);
+    if (tableRows.length === 0 || !this.documentData) return;
 
-      return {
-        day,
-        date,
-        opening,
-        zuhr,
-        asr,
-        closing
-      };
-    }).filter(row => row.day || row.date || row.opening || row.closing || row.zuhr.imam || row.zuhr.muezzin || row.asr.imam || row.asr.muezzin);
-
-    if (tableRows.length > 0 && this.documentData) {
-      this.documentData.tableRows = tableRows;
-    }
+    setTableRows(this.documentData, tableRows);
   }
 
   private parseDayDate(cell: string): { day: string; date: string } {
     const match = cell.match(/^([^\d]+)\s*(\d+\s+\w+)?$/);
     if (match) {
-      return {
-        day: match[1]?.trim() || '',
-        date: match[2]?.trim() || ''
-      };
+      return { day: match[1]?.trim() || '', date: match[2]?.trim() || '' };
     }
     return { day: cell, date: '' };
   }
 
-  private parseSimpleNames(cell: string): string {
-    if (!cell) return '';
-    return cell.split(/\s+/).filter(name => name.trim()).join(' ');
-  }
+  // ------------------------------------------------- individual program HTML
 
-  private parsePrayerSlot(cell: string): { imam: string; muezzin: string } {
-    const result = { imam: '', muezzin: '' };
-
-    if (!cell) return result;
-
-    // Handle formats:
-    // "الإمام: بوفيس, المؤذن: نمري" (comma separator)
-    // "الإمام: بوفيس المؤذن: نمري" (space separator)
-    // "الإمام : بوفيس المؤذن : نمري"
-
-    // Try comma format first
-    const commaFormat = cell.match(/الإمام\s*:\s*([^,]+)\s*,?\s*المؤذن\s*:\s*(.+)/);
-    if (commaFormat) {
-      result.imam = commaFormat[1]?.trim() || '';
-      result.muezzin = commaFormat[2]?.trim() || '';
-      return result;
-    }
-
-    // Fallback to original format
-    const imamMatch = cell.match(/الإمام\s*:\s*([^\nالمؤذن]+)/);
-    const muezzinMatch = cell.match(/المؤذن\s*:\s*([^\n]+)/);
-
-    if (imamMatch) {
-      result.imam = imamMatch[1]?.trim() || '';
-    }
-    if (muezzinMatch) {
-      result.muezzin = muezzinMatch[1]?.trim() || '';
-    }
-
-    return result;
-  }
-
-  private escapeHtml(str: string): string {
-    return str
-      .replace(/&/g, '&amp;')
-      .replace(/</g, '&lt;')
-      .replace(/>/g, '&gt;')
-      .replace(/"/g, '&quot;')
-      .replace(/'/g, '&#39;');
-  }
-
-  private renderIndividualProgram(personName: string, rows: CleaningRow[], mode?: PlanningMode): string {
-    if (!this.documentData) return '';
-    const header = this.documentData.header;
+  private renderIndividualProgram(
+    personName: string,
+    rows: CleaningRow[],
+    mode?: 'period' | 'weekly'
+  ): string {
+    const doc = this.documentData;
+    if (!doc) return '';
+    const header = doc.header;
 
     return `
-      <div class="a4-page">
-        <div class="doc-header">
-          <div class="doc-logo">
-            <svg width="50" height="50" viewBox="0 0 60 60" fill="none" xmlns="http://www.w3.org/2000/svg">
-              <rect width="60" height="60" rx="8" fill="#243245"/>
-              <path d="M42.7626 50.8839V54.9995H27.8633V29.8248C27.8633 25.9693 29.2212 22.3202 31.677 19.5207C33.0075 17.9981 34.5719 16.695 36.3558 15.6104C37.289 16.6258 38.1804 17.7237 38.9345 18.8764C37.3164 19.7952 35.9167 20.9205 34.764 22.251C32.9669 24.282 31.9789 26.9704 31.9789 29.8248V50.8839H42.7626Z" fill="#0DE9C3"/>
-              <path d="M44.6279 54.9999H40.5123V23.4434C40.5123 22.2179 40.208 21.033 39.6328 20.0175C37.053 15.4603 32.1961 11.581 30.0007 9.97362C27.8051 11.5846 22.9389 15.4735 20.3662 20.0175C19.791 21.033 19.4867 22.2179 19.4867 23.4434V54.9999H15.3711V23.4434C15.3711 21.5079 15.8603 19.6225 16.7839 17.9889C20.6561 11.1502 28.5401 5.95344 28.873 5.73506L29.9983 5L31.1236 5.73506C31.4577 5.95224 39.3405 11.1502 43.2127 17.9889C44.1375 19.6213 44.6255 21.5079 44.6255 23.4434V54.9999H44.6279Z" fill="white"/>
-            </svg>
-          </div>
-          <div class="doc-title">
-            <h1>${this.escapeHtml(header.title)} - ${this.escapeHtml(personName)}</h1>
-            <p>${this.escapeHtml(header.subtitle)}</p>
-          </div>
-          <div class="doc-version">${this.escapeHtml(header.version)}</div>
-        </div>
+      <div class="a4-page ${getDocTypeConfig('cleaning').pageClass}">
+        ${renderIndividualHeader(header, personName)}
         <div class="info-box">
-          <h2>جدول مهام ${this.escapeHtml(personName)}</h2>
+          <h2>جدول مهام ${escapeHtml(personName)}</h2>
           <div class="info-items">
             <div class="info-item"><span>عدد الأيام:</span><span>${rows.length}</span></div>
           </div>
@@ -1160,26 +1076,196 @@ export class App {
             </tr>
           </thead>
           <tbody>
-            ${rows.map(row => `
+            ${rows
+              .map(
+                row => `
               <tr>
                 <td class="date-cell">
-                  ${row.day ? `<div class="day">${this.escapeHtml(row.day)}</div>` : ''}
-                  ${row.date && mode !== 'weekly' ? `<div class="date">${this.escapeHtml(row.date)}</div>` : ''}
+                  ${row.day ? `<div class="day">${escapeHtml(row.day)}</div>` : ''}
+                  ${row.date && mode !== 'weekly' ? `<div class="date">${escapeHtml(row.date)}</div>` : ''}
                 </td>
                 <td>
-                  ${row.tasks.length > 0 ? `
-                    <div class="task-list">
-                      ${row.tasks.map(t => `<div class="task-item">${this.escapeHtml(t)}</div>`).join('')}
-                    </div>
-                  ` : '-'}
+                  ${
+                    row.tasks.length > 0
+                      ? `<div class="task-list">${row.tasks.map(task => `<div class="task-item">${escapeHtml(task)}</div>`).join('')}</div>`
+                      : '-'
+                  }
                 </td>
-              </tr>
-            `).join('')}
+              </tr>`
+              )
+              .join('')}
           </tbody>
         </table>
       </div>
     `;
   }
+
+  private renderPrayerIndividualProgram(personName: string, rows: PrayerRow[]): string {
+    const doc = this.documentData;
+    if (!doc) return '';
+
+    return `
+      <div class="a4-page ${getDocTypeConfig('prayer').pageClass}">
+        ${renderIndividualHeader(doc.header, personName)}
+        <div class="info-box">
+          <h2>جدول مهام ${escapeHtml(personName)}</h2>
+          <div class="info-items">
+            <div class="info-item"><span>عدد الأيام:</span><span>${rows.length}</span></div>
+          </div>
+        </div>
+        <table class="doc-table">
+          <thead>
+            <tr>
+              <th style="width: 12%">التاريخ</th>
+              <th style="width: 22%">الفتح</th>
+              <th style="width: 22%">الظهر</th>
+              <th style="width: 22%">العصر</th>
+              <th style="width: 22%">الغلق</th>
+            </tr>
+          </thead>
+          <tbody>
+            ${rows
+              .map(
+                row => `
+              <tr>
+                <td class="date-cell">
+                  ${row.day ? `<div class="day">${escapeHtml(row.day)}</div>` : ''}
+                  ${row.date ? `<div class="date">${escapeHtml(row.date)}</div>` : ''}
+                </td>
+                <td>${highlightPerson(row.opening, personName)}</td>
+                <td>${renderPrayerDuty(row.zuhr, personName)}</td>
+                <td>${renderPrayerDuty(row.asr, personName)}</td>
+                <td>${highlightPerson(row.closing, personName)}</td>
+              </tr>`
+              )
+              .join('')}
+          </tbody>
+        </table>
+      </div>
+    `;
+  }
+}
+
+// --------------------------------------------------------------- helpers
+
+function renderIndividualHeader(header: { title: string; subtitle: string; version: string }, personName: string): string {
+  return `
+    <div class="doc-header">
+      <div class="doc-logo">${MOSQUE_LOGO}</div>
+      <div class="doc-title">
+        <h1>${escapeHtml(header.title)} - ${escapeHtml(personName)}</h1>
+        <p>${escapeHtml(header.subtitle)}</p>
+      </div>
+      <div class="doc-version">${escapeHtml(header.version)}</div>
+    </div>
+  `;
+}
+
+function highlightPerson(cell: string | undefined, personName: string): string {
+  const names = (cell ?? '')
+    .split(' ')
+    .map(name => name.trim())
+    .filter(Boolean);
+  const displayHtml = names.length > 0 ? escapeHtml(names.join('، ')) : '-';
+  return names.includes(personName) ? `<strong class="person-highlight">${displayHtml}</strong>` : displayHtml;
+}
+
+function renderPrayerDuty(slot: { imam: string; muezzin: string } | undefined, personName: string): string {
+  if (!slot) return '-';
+
+  const parts: string[] = [];
+
+  if (slot.imam) {
+    parts.push(
+      slot.imam === personName
+        ? `<strong class="highlight-imam">الإمام: ${escapeHtml(slot.imam)}</strong>`
+        : `الإمام: ${escapeHtml(slot.imam)}`
+    );
+  }
+
+  if (slot.muezzin) {
+    parts.push(
+      slot.muezzin === personName
+        ? `<strong class="highlight-muezzin">المؤذن: ${escapeHtml(slot.muezzin)}</strong>`
+        : `المؤذن: ${escapeHtml(slot.muezzin)}`
+    );
+  }
+
+  return parts.length > 0 ? parts.join('<br>') : '-';
+}
+
+function splitList(value: string | undefined): string[] {
+  if (!value) return [];
+  return value
+    .split(/[,،\n\r]+/)
+    .map(item => item.trim())
+    .filter(Boolean);
+}
+
+function normalizeNames(value: string | undefined): string {
+  if (!value) return '';
+  return value
+    .split(/\s+/)
+    .filter(name => name.trim())
+    .join(' ');
+}
+
+/**
+ * Handles the documented `الإمام: <name>` / `المؤذن: <name>` cell format,
+ * with either a comma or a space between the two roles.
+ */
+function parsePrayerSlot(cell: string | undefined): { imam: string; muezzin: string } {
+  const result = { imam: '', muezzin: '' };
+  if (!cell) return result;
+
+  const combined = cell.match(/الإمام\s*:\s*([^,]+)\s*,?\s*المؤذن\s*:\s*(.+)/);
+  if (combined) {
+    result.imam = combined[1]?.trim() || '';
+    result.muezzin = combined[2]?.trim() || '';
+    return result;
+  }
+
+  const imam = cell.match(/الإمام\s*:\s*([^\nالمؤذن]+)/);
+  const muezzin = cell.match(/المؤذن\s*:\s*([^\n]+)/);
+
+  if (imam) result.imam = imam[1]?.trim() || '';
+  if (muezzin) result.muezzin = muezzin[1]?.trim() || '';
+
+  return result;
+}
+
+function canvasToBlob(canvas: HTMLCanvasElement, type: string, quality?: number): Promise<Blob> {
+  return new Promise((resolve, reject) => {
+    canvas.toBlob(blob => (blob ? resolve(blob) : reject(new Error('Canvas conversion failed'))), type, quality);
+  });
+}
+
+function downloadBlob(blob: Blob, filename: string): void {
+  const url = URL.createObjectURL(blob);
+  const link = document.createElement('a');
+  link.href = url;
+  link.download = filename;
+  document.body.appendChild(link);
+  link.click();
+  link.remove();
+  // Revoking synchronously cancels the download in some browsers.
+  setTimeout(() => URL.revokeObjectURL(url), 10_000);
+}
+
+/** One delegated listener per container; `data-action`/`data-index` drive the handler. */
+function delegateRowActions(containerId: string, handler: (action: { index: number; action: string }) => void): void {
+  const container = document.getElementById(containerId);
+  if (!container) return;
+
+  container.addEventListener('click', (event: Event) => {
+    const target = (event.target as HTMLElement).closest('[data-index]') as HTMLElement | null;
+    if (!target) return;
+
+    const index = parseInt(target.dataset.index ?? '', 10);
+    if (Number.isNaN(index)) return;
+
+    handler({ index, action: target.dataset.action ?? 'delete' });
+  });
 }
 
 declare global {
