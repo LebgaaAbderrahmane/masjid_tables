@@ -1,4 +1,5 @@
 import type { HeaderData } from '../../types';
+import { escapeHtml } from '../../utils/html';
 
 export function renderHeaderEditor(data: HeaderData, _onChange: () => void): string {
   return `
@@ -15,12 +16,4 @@ export function renderHeaderEditor(data: HeaderData, _onChange: () => void): str
       <input type="text" id="headerVersion" value="${escapeHtml(data.version)}" oninput="window.app.updateHeaderVersion(this.value)">
     </div>
   `;
-}
-
-function escapeHtml(str: string): string {
-  return str
-    .replace(/&/g, '&amp;')
-    .replace(/</g, '&lt;')
-    .replace(/>/g, '&gt;')
-    .replace(/"/g, '&quot;');
 }

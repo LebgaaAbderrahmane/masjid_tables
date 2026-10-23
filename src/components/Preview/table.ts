@@ -1,42 +1,161 @@
-import type { DocumentType, CleaningRow, PrayerRow, CleaningInfoBox, PrayerInfoBox, PlanningMode } from '../../types';
+import type {
+  CircleCell,
+  CircleColumn,
+  CircleRow,
+  CirclesInfoBox,
+  CleaningInfoBox,
+  CleaningRow,
+  DocumentType,
+  InfoBoxData,
+  PlanningMode,
+  PrayerInfoBox,
+  PrayerRow,
+  TableRow
+} from '../../types';
+import { escapeHtml } from '../../utils/html';
 
-export function renderInfoBox(type: DocumentType, infoBox: CleaningInfoBox | PrayerInfoBox): string {
-  if (type === 'cleaning') {
-    const box = infoBox as CleaningInfoBox;
-    return `
-      <div class="info-box">
-        <h2>${escapeHtml(box.title)}</h2>
-        <div class="info-items">
-          ${box.period ? `<div class="info-item"><span>الفترة:</span><span>${escapeHtml(box.period)}</span></div>` : ''}
-          ${box.responsible ? `<div class="info-item"><span>المسؤول:</span><span>${escapeHtml(box.responsible)}</span></div>` : ''}
-        </div>
-      </div>
-    `;
-  } else {
-    const box = infoBox as PrayerInfoBox;
-    return `
-      <div class="info-box">
-        <h2>${escapeHtml(box.title)}</h2>
-        <div class="info-items">
-          ${box.zuhr ? `<div class="info-item"><span>الظهر:</span><span>${escapeHtml(box.zuhr)}</span></div>` : ''}
-          ${box.asr ? `<div class="info-item"><span>العصر:</span><span>${escapeHtml(box.asr)}</span></div>` : ''}
-          ${box.maghrib ? `<div class="info-item"><span>المغرب:</span><span>${escapeHtml(box.maghrib)}</span></div>` : ''}
-        </div>
-      </div>
-    `;
+export function renderInfoBox(type: DocumentType, infoBox: InfoBoxData): string {
+  const items = renderInfoItems(type, infoBox);
+
+  return `
+    <div class="info-box">
+      <h2>${escapeHtml(infoBox.title ?? '')}</h2>
+      ${items ? `<div class="info-items">${items}</div>` : ''}
+    </div>
+  `;
+}
+
+function renderInfoItems(type: DocumentType, infoBox: InfoBoxData): string {
+  switch (type) {
+    case 'cleaning': {
+      const box = infoBox as CleaningInfoBox;
+      return [
+        box.period ? item('الفترة', box.period) : '',
+        box.responsible ? item('المسؤول', box.responsible) : ''
+      ].join('');
+    }
+    case 'prayer': {
+      const box = infoBox as PrayerInfoBox;
+      return [
+        box.zuhr ? item('الظهر', box.zuhr) : '',
+        box.asr ? item('العصر', box.asr) : '',
+        box.maghrib ? item('المغرب', box.maghrib) : ''
+      ].join('');
+    }
+    case 'circles': {
+      const box = infoBox as CirclesInfoBox;
+      return [
+        box.supervisor ? item('المشرف', box.supervisor) : '',
+        box.location ? item('المكان', box.location) : ''
+      ].join('');
+    }
+    default:
+      return '';
   }
 }
 
-export function renderTable(type: DocumentType, rows: (CleaningRow | PrayerRow)[], planningMode?: PlanningMode): string {
-  if (type === 'cleaning') {
-    return renderCleaningTable(rows as CleaningRow[], planningMode);
-  } else {
-    return renderPrayerTable(rows as PrayerRow[], planningMode);
-  }
+function item(label: string, value: string): string {
+  return `<div class="info-item"><span>${escapeHtml(label)}:</span><span>${escapeHtml(value)}</span></div>`;
 }
 
-function renderCleaningTable(rows: CleaningRow[], planningMode?: PlanningMode): string {
+export function renderTable(
+  type: DocumentType,
+  rows: TableRow[],
+  planningMode?: PlanningMode,
+  columns: readonly CircleColumn[] = []
+): string {
   const isWeekly = planningMode === 'weekly';
+
+  switch (type) {
+    case 'cleaning':
+      return renderCleaningTable(rows, isWeekly);
+    case 'prayer':
+      return renderPrayerTable(rows, isWeekly);
+    case 'circles':
+      return renderCirclesTable(rows, columns, isWeekly);
+    default:
+      return '';
+  }
+}
+
+function renderCirclesTable(
+  rows: TableRow[],
+  columns: readonly CircleColumn[],
+  isWeekly: boolean
+): string {
+  const circleRows = rows as CircleRow[];
+
+  if (columns.length === 0) {
+    return '<p class="hint-text">لم تُضَف أي أعمدة بعد.</p>';
+  }
+
+  const dayWidth = 12;
+  const columnWidth = Math.floor((100 - dayWidth) / columns.length);
+
+  return `
+    <table class="doc-table circles-table">
+      <thead>
+        <tr>
+          <th style="width: ${dayWidth}%">${isWeekly ? 'اليوم' : 'التاريخ'}</th>
+          ${columns
+            .map(
+              column =>
+                `<th class="circle-col-head" style="width: ${columnWidth}%">${escapeHtml(column.title)}</th>`
+            )
+            .join('')}
+        </tr>
+      </thead>
+      <tbody>
+        ${circleRows
+          .map(
+            row => `
+          <tr>
+            <td class="date-cell">
+              ${row.day ? `<div class="day">${escapeHtml(row.day)}</div>` : ''}
+              ${row.date && !isWeekly ? `<div class="date">${escapeHtml(row.date)}</div>` : ''}
+            </td>
+            ${columns.map(column => renderCircleCell(row.cells?.[column.id])).join('')}
+          </tr>
+        `
+          )
+          .join('')}
+      </tbody>
+    </table>
+  `;
+}
+
+/** Two-tier cell: what is taught on top, who teaches it underneath. */
+function renderCircleCell(cell: CircleCell | undefined): string {
+  const lesson = cell?.lesson?.trim() ?? '';
+  const person = cell?.person?.trim() ?? '';
+
+  if (!lesson && !person) {
+    return '<td class="circle-cell is-empty"><span aria-hidden="true">–</span></td>';
+  }
+
+  // The lesson is kept verbatim: a single pre-wrap block reproduces the
+  // editor's spacing exactly (multiple spaces, newlines, blank lines).
+  // Presenters are split one-per-line so each gets its own chip.
+  const presenters = person
+    .split('\n')
+    .map(name => name.trim())
+    .filter(Boolean);
+
+  return `
+    <td class="circle-cell">
+      ${lesson ? `<div class="cell-lesson">${escapeHtml(lesson)}</div>` : ''}
+      ${
+        presenters.length > 0
+          ? `<div class="cell-person">${presenters.map(name => `<span class="cell-chip">${escapeHtml(name)}</span>`).join('')}</div>`
+          : ''
+      }
+    </td>
+  `;
+}
+
+function renderCleaningTable(rows: TableRow[], isWeekly: boolean): string {
+  const cleaningRows = rows as CleaningRow[];
+
   return `
     <table class="doc-table">
       <thead>
@@ -47,35 +166,48 @@ function renderCleaningTable(rows: CleaningRow[], planningMode?: PlanningMode): 
         </tr>
       </thead>
       <tbody>
-        ${rows.map(row => `
+        ${cleaningRows
+          .map(
+            row => `
           <tr>
             <td class="date-cell">
               ${row.day ? `<div class="day">${escapeHtml(row.day)}</div>` : ''}
               ${row.date && !isWeekly ? `<div class="date">${escapeHtml(row.date)}</div>` : ''}
             </td>
             <td>
-              ${row.personnel && row.personnel.length > 0 ? `
+              ${
+                row.personnel && row.personnel.length > 0
+                  ? `
                 <div class="personnel-list">
                   ${row.personnel.map(p => `<div class="personnel-item">${escapeHtml(p)}</div>`).join('')}
                 </div>
-              ` : ''}
+              `
+                  : ''
+              }
             </td>
             <td>
-              ${row.tasks && row.tasks.length > 0 ? `
+              ${
+                row.tasks && row.tasks.length > 0
+                  ? `
                 <div class="task-list">
                   ${row.tasks.map(t => `<div class="task-item">${escapeHtml(t)}</div>`).join('')}
                 </div>
-              ` : ''}
+              `
+                  : ''
+              }
             </td>
           </tr>
-        `).join('')}
+        `
+          )
+          .join('')}
       </tbody>
     </table>
   `;
 }
 
-function renderPrayerTable(rows: PrayerRow[], planningMode?: PlanningMode): string {
-  const isWeekly = planningMode === 'weekly';
+function renderPrayerTable(rows: TableRow[], isWeekly: boolean): string {
+  const prayerRows = rows as PrayerRow[];
+
   return `
     <table class="doc-table">
       <thead>
@@ -88,50 +220,52 @@ function renderPrayerTable(rows: PrayerRow[], planningMode?: PlanningMode): stri
         </tr>
       </thead>
       <tbody>
-        ${rows.map(row => `
+        ${prayerRows
+          .map(
+            row => `
           <tr>
             <td class="date-cell">
               ${row.day ? `<div class="day">${escapeHtml(row.day)}</div>` : ''}
               ${row.date && !isWeekly ? `<div class="date">${escapeHtml(row.date)}</div>` : ''}
             </td>
             <td>${renderMultipleNames(row.opening)}</td>
-            <td>
-              ${row.zuhr && (row.zuhr.imam || row.zuhr.muezzin) ? `
-                <div class="role-container">
-                  ${row.zuhr.imam ? `<div class="role-row imam-row ${row.zuhr.imam === 'المتوفر' ? 'unavailable' : ''}"><span class="role-label">الإمام:</span> ${escapeHtml(row.zuhr.imam)}</div>` : ''}
-                  ${row.zuhr.muezzin ? `<div class="role-row muezzin-row ${row.zuhr.muezzin === 'المتوفر' ? 'unavailable' : ''}"><span class="role-label">المؤذن:</span> ${escapeHtml(row.zuhr.muezzin)}</div>` : ''}
-                </div>
-              ` : ''}
-            </td>
-            <td>
-              ${row.asr && (row.asr.imam || row.asr.muezzin) ? `
-                <div class="role-container">
-                  ${row.asr.imam ? `<div class="role-row imam-row ${row.asr.imam === 'المتوفر' ? 'unavailable' : ''}"><span class="role-label">الإمام:</span> ${escapeHtml(row.asr.imam)}</div>` : ''}
-                  ${row.asr.muezzin ? `<div class="role-row muezzin-row ${row.asr.muezzin === 'المتوفر' ? 'unavailable' : ''}"><span class="role-label">المؤذن:</span> ${escapeHtml(row.asr.muezzin)}</div>` : ''}
-                </div>
-              ` : ''}
-            </td>
+            <td>${renderSlot(row.zuhr)}</td>
+            <td>${renderSlot(row.asr)}</td>
             <td>${renderMultipleNames(row.closing)}</td>
           </tr>
-        `).join('')}
+        `
+          )
+          .join('')}
       </tbody>
     </table>
   `;
 }
 
-function renderMultipleNames(names: string): string {
-  if (!names) return '-';
-  const nameList = names.split(/\s+/).filter(n => n.trim());
-  return nameList.map(name => {
-    const isUnavailable = name === 'المتوفر';
-    return `<div class="${isUnavailable ? 'unavailable' : ''}">${escapeHtml(name)}</div>`;
-  }).join('');
+function renderSlot(slot: { imam: string; muezzin: string } | undefined): string {
+  if (!slot || !(slot.imam || slot.muezzin)) return '';
+
+  return `
+    <div class="role-container">
+      ${slot.imam ? roleRow('imam-row', 'الإمام', slot.imam) : ''}
+      ${slot.muezzin ? roleRow('muezzin-row', 'المؤذن', slot.muezzin) : ''}
+    </div>
+  `;
 }
 
-function escapeHtml(str: string): string {
-  return str
-    .replace(/&/g, '&amp;')
-    .replace(/</g, '&lt;')
-    .replace(/>/g, '&gt;')
-    .replace(/"/g, '&quot;');
+function roleRow(modifier: string, label: string, name: string): string {
+  const unavailable = name === 'المتوفر' ? ' unavailable' : '';
+  return `
+    <div class="role-row ${modifier}${unavailable}">
+      <span class="role-label">${escapeHtml(label)}:</span> ${escapeHtml(name)}
+    </div>
+  `;
+}
+
+function renderMultipleNames(names: string | undefined): string {
+  if (!names) return '-';
+  return names
+    .split(/\s+/)
+    .filter(name => name.trim())
+    .map(name => `<div class="${name === 'المتوفر' ? 'unavailable' : ''}">${escapeHtml(name)}</div>`)
+    .join('');
 }

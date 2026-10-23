@@ -1,53 +1,47 @@
-import type { DocumentType, CleaningInfoBox, PrayerInfoBox } from '../../types';
+import type { CirclesInfoBox, CleaningInfoBox, DocumentType, InfoBoxData, PrayerInfoBox } from '../../types';
+import { escapeHtml } from '../../utils/html';
 
 export function renderInfoBoxEditor(
   type: DocumentType,
-  infoBox: CleaningInfoBox | PrayerInfoBox,
+  infoBox: InfoBoxData,
   _onChange: () => void
 ): string {
-  if (type === 'cleaning') {
-    const box = infoBox as CleaningInfoBox;
-    return `
-      <div class="form-group">
-        <label>عنوان الصندوق</label>
-        <input type="text" value="${escapeHtml(box.title)}" oninput="window.app.updateInfoBoxField('title', this.value)">
-      </div>
-      <div class="form-group">
-        <label>الفترة</label>
-        <input type="text" value="${escapeHtml(box.period)}" oninput="window.app.updateInfoBoxField('period', this.value)">
-      </div>
-      <div class="form-group">
-        <label>المسؤول</label>
-        <input type="text" value="${escapeHtml(box.responsible)}" oninput="window.app.updateInfoBoxField('responsible', this.value)">
-      </div>
-    `;
-  } else {
-    const box = infoBox as PrayerInfoBox;
-    return `
-      <div class="form-group">
-        <label>عنوان الصندوق</label>
-        <input type="text" value="${escapeHtml(box.title)}" oninput="window.app.updateInfoBoxField('title', this.value)">
-      </div>
-      <div class="form-group">
-        <label>الظهر</label>
-        <input type="text" value="${escapeHtml(box.zuhr)}" oninput="window.app.updateInfoBoxField('zuhr', this.value)">
-      </div>
-      <div class="form-group">
-        <label>العصر</label>
-        <input type="text" value="${escapeHtml(box.asr)}" oninput="window.app.updateInfoBoxField('asr', this.value)">
-      </div>
-      <div class="form-group">
-        <label>المغرب</label>
-        <input type="text" value="${escapeHtml(box.maghrib)}" oninput="window.app.updateInfoBoxField('maghrib', this.value)">
-      </div>
-    `;
+  switch (type) {
+    case 'cleaning': {
+      const box = infoBox as CleaningInfoBox;
+      return `
+        ${field('عنوان الصندوق', box.title, 'title')}
+        ${field('الفترة', box.period, 'period')}
+        ${field('المسؤول', box.responsible, 'responsible')}
+      `;
+    }
+    case 'prayer': {
+      const box = infoBox as PrayerInfoBox;
+      return `
+        ${field('عنوان الصندوق', box.title, 'title')}
+        ${field('الظهر', box.zuhr, 'zuhr')}
+        ${field('العصر', box.asr, 'asr')}
+        ${field('المغرب', box.maghrib, 'maghrib')}
+      `;
+    }
+    case 'circles': {
+      const box = infoBox as CirclesInfoBox;
+      return `
+        ${field('عنوان الصندوق', box.title, 'title')}
+        ${field('المشرف', box.supervisor, 'supervisor')}
+        ${field('المكان', box.location, 'location')}
+      `;
+    }
+    default:
+      return '';
   }
 }
 
-function escapeHtml(str: string): string {
-  return str
-    .replace(/&/g, '&amp;')
-    .replace(/</g, '&lt;')
-    .replace(/>/g, '&gt;')
-    .replace(/"/g, '&quot;');
+function field(label: string, value: string | undefined, key: string): string {
+  return `
+    <div class="form-group">
+      <label>${escapeHtml(label)}</label>
+      <input type="text" value="${escapeHtml(value ?? '')}" oninput="window.app.updateInfoBoxField('${key}', this.value)">
+    </div>
+  `;
 }

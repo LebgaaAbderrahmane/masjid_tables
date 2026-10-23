@@ -86,6 +86,32 @@ body {
   margin: 0;
 }
 
+/* Each program type carries its own accent, on the picker and on the printed page. */
+.type-option.cleaning h3 {
+  color: #065f46;
+}
+
+.type-option.cleaning:hover {
+  border-color: #065f46;
+}
+
+.type-option.prayer h3 {
+  color: #1a2a6c;
+}
+
+.type-option.prayer:hover {
+  border-color: #1a2a6c;
+}
+
+.type-option.circles h3 {
+  color: #1d4ed8;
+}
+
+.type-option.circles:hover {
+  border-color: #1d4ed8;
+  background: #eff6ff;
+}
+
 .editor-layout {
   display: none;
   min-height: 100vh;
@@ -313,6 +339,89 @@ body {
   display: flex;
   flex-wrap: wrap;
   gap: 8px;
+}
+
+.hint-text {
+  color: #888;
+  font-size: 13px;
+}
+
+.column-editor {
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 12px;
+  margin-bottom: 10px;
+  background: #f5f9ff;
+}
+
+.column-editor-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 8px;
+}
+
+.column-editor-header strong {
+  color: #1d4ed8;
+  font-size: 14px;
+}
+
+.column-list {
+  margin-bottom: 10px;
+}
+
+.circle-cells-editor {
+  display: grid;
+  /* auto-fill + minmax() wraps naturally: in the 450px sidebar three 150px
+     tracks don't fit, so the third card drops to its own row instead of
+     overflowing the container. */
+  grid-template-columns: repeat(auto-fill, minmax(150px, 1fr));
+  gap: 10px;
+}
+
+.circle-cell-editor {
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 8px;
+  background: var(--light-bg);
+  /* Grid items default to min-width:auto, which would keep the card at its
+     intrinsic input width and push it out of the container. Let it shrink. */
+  min-width: 0;
+}
+
+.cell-editor-label {
+  font-size: 12px;
+  font-weight: 700;
+  color: #1d4ed8;
+  line-height: 1.4;
+  /* Long headings like "محاضرات عن بُعد (بعد العشاء)" must wrap inside the
+     card rather than widening it past the sidebar. */
+  overflow-wrap: anywhere;
+  word-break: break-word;
+}
+
+.circle-cell-editor .cell-input {
+  padding: 6px 8px;
+  border: 1px solid var(--border);
+  border-radius: 5px;
+  font-family: 'Tajawal', sans-serif;
+  font-size: 13px;
+  /* Textareas default to ~20ch of intrinsic width; without this the grid track
+     stays wider than its card and long Arabic titles overflow the sidebar. */
+  width: 100%;
+  box-sizing: border-box;
+  resize: vertical;
+  line-height: 1.5;
+  min-height: 44px;
+}
+
+.circle-cell-editor .cell-input:focus {
+  outline: none;
+  border-color: #1d4ed8;
+  box-shadow: 0 0 0 2px rgba(29, 78, 216, 0.12);
 }
 
 .member-tag {
@@ -571,6 +680,105 @@ body {
   background-color: white;
 }
 
+/* ---- الحلقات العلمية: blue identity on the printed page ------------------
+   Colours are literal hex, not var() overrides: html2canvas does not reliably
+   resolve custom properties when rasterising the preview for export. */
+
+.circles-page .doc-header {
+  border-bottom: 3px solid #1d4ed8;
+}
+
+.circles-page .doc-title h1 {
+  color: #1e40af;
+}
+
+.circles-page .info-box {
+  background-color: #eff6ff;
+  border-color: #1d4ed8;
+}
+
+.circles-page .info-box h2 {
+  color: #1e40af;
+}
+
+.circles-page .info-item span:first-child {
+  color: #1d4ed8;
+}
+
+.circles-table th {
+  background-color: #1d4ed8;
+}
+
+.circles-table .circle-col-head {
+  line-height: 1.5;
+}
+
+.circles-table .date-cell {
+  background-color: #eff6ff;
+  color: #1e40af;
+}
+
+.circles-table .date-cell .day {
+  color: #1e40af;
+}
+
+.circles-table tr:nth-child(even) {
+  background-color: #f5f9ff;
+}
+
+.circle-cell {
+  vertical-align: middle;
+}
+
+.cell-lesson {
+  font-weight: 700;
+  color: #1e3a8a;
+  font-size: 10pt;
+  line-height: 1.5;
+  /* Preserves the spaces and blank lines the editor lets people type. */
+  white-space: pre-wrap;
+}
+
+.cell-person {
+  margin-top: 2px;
+  /* A cell can hold several presenters; let their chips flow and wrap. */
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: 3px;
+}
+
+.cell-chip {
+  display: inline-block;
+  background-color: #dbeafe;
+  color: #1e40af;
+  border: 1px solid #bfdbfe;
+  border-radius: 999px;
+  padding: 1px 9px;
+  font-size: 8.5pt;
+  font-weight: 500;
+  /* Keep spacing inside a presenter's name as typed. */
+  white-space: pre-wrap;
+}
+
+.circle-cell.is-empty {
+  color: #93c5fd;
+  font-size: 11pt;
+}
+
+/* Presenter highlighting in the per-member program preview. */
+.person-highlight {
+  color: #065f46;
+}
+
+.highlight-imam {
+  color: #065f46;
+}
+
+.highlight-muezzin {
+  color: #1a2a6c;
+}
+
 .date-cell {
   font-weight: bold;
   color: var(--secondary);
@@ -816,6 +1024,12 @@ body {
     max-height: none;
     padding: 10px;
     overflow-x: auto;
+  }
+
+  /* auto-fill already wraps when space is tight, but a phone-width sidebar
+     still benefits from a guaranteed single column. */
+  .circle-cells-editor {
+    grid-template-columns: 1fr;
   }
 }
 

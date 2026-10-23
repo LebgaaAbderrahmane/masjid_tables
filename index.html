@@ -23,13 +23,17 @@
       <h1>نظام جداول المسجد</h1>
       <p>اختر نوع الوثيقة التي تريد إنشاءها</p>
       <div class="type-options">
-        <div class="type-option" onclick="window.app.selectType('cleaning')">
+        <div class="type-option cleaning" onclick="window.app.selectType('cleaning')">
           <h3>📋 برنامج النظافة</h3>
           <p>جدول توزيع مهام النظافة اليومية</p>
         </div>
-        <div class="type-option" onclick="window.app.selectType('prayer')">
+        <div class="type-option prayer" onclick="window.app.selectType('prayer')">
           <h3>🕌 برنامج الصلاة</h3>
           <p>جدول توزيع المهام اليومية للإمامة والأذان</p>
+        </div>
+        <div class="type-option circles" onclick="window.app.selectType('circles')">
+          <h3>📚 الحلقات العلمية</h3>
+          <p>جدول توزيع الدروس والحلقات والمحاضرات</p>
         </div>
       </div>
     </div>
@@ -58,6 +62,11 @@
 
       <div class="editor-section" id="cleaningModeSection"></div>
 
+      <div class="editor-section" id="columnsSection">
+        <h3>أعمدة الحصص</h3>
+        <div id="columnsEditor"></div>
+      </div>
+
       <div class="editor-section">
         <h3>الجدول</h3>
         <div id="tableRowsEditor"></div>
@@ -70,13 +79,13 @@
         <button class="btn-add" onclick="window.app.addFooterNote()">+ إضافة ملاحظة جديدة</button>
       </div>
 
-      <div class="import-section">
+      <div class="import-section" id="importSection">
         <h3 style="margin-bottom: 15px; color: var(--primary);">استيراد البيانات</h3>
         <div class="import-buttons">
           <button class="btn-import" onclick="document.getElementById('importFile').click()">📥 استيراد من Excel/CSV</button>
           <input type="file" id="importFile" accept=".csv,.xlsx,.xls" style="display: none;" onchange="window.app.handleFileImport(event)">
         </div>
-        <p class="import-hint">Supported formats: CSV, Excel (.xlsx, .xls)</p>
+        <p class="import-hint">الصيغ المدعومة: CSV، Excel (xlsx, xls)</p>
       </div>
 
       <div class="members-section" id="membersSection">
@@ -89,7 +98,7 @@
         <div class="export-buttons">
           <button class="btn-export pdf" onclick="window.app.exportToPDF()">📄 تصدير كـ PDF</button>
           <button class="btn-export jpg" onclick="window.app.exportToImage()">🖼️ تصدير كصورة</button>
-          <button class="btn-export individual" onclick="window.app.exportIndividualPrograms()">👤 تصدير برامج الأفراد</button>
+          <button class="btn-export individual" id="individualExportBtn" onclick="window.app.exportIndividualPrograms()">👤 تصدير برامج الأفراد</button>
         </div>
       </div>
     </div>
