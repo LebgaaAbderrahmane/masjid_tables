@@ -104,12 +104,12 @@ body {
 }
 
 .type-option.circles h3 {
-  color: #6d28d9;
+  color: #1d4ed8;
 }
 
 .type-option.circles:hover {
-  border-color: #6d28d9;
-  background: #f5f3ff;
+  border-color: #1d4ed8;
+  background: #eff6ff;
 }
 
 .editor-layout {
@@ -351,7 +351,7 @@ body {
   border-radius: 8px;
   padding: 12px;
   margin-bottom: 10px;
-  background: #faf5ff;
+  background: #f5f9ff;
 }
 
 .column-editor-header {
@@ -362,7 +362,7 @@ body {
 }
 
 .column-editor-header strong {
-  color: #6d28d9;
+  color: #1d4ed8;
   font-size: 14px;
 }
 
@@ -395,7 +395,7 @@ body {
 .cell-editor-label {
   font-size: 12px;
   font-weight: 700;
-  color: #6d28d9;
+  color: #1d4ed8;
   line-height: 1.4;
   /* Long headings like "محاضرات عن بُعد (بعد العشاء)" must wrap inside the
      card rather than widening it past the sidebar. */
@@ -420,8 +420,8 @@ body {
 
 .circle-cell-editor .cell-input:focus {
   outline: none;
-  border-color: #6d28d9;
-  box-shadow: 0 0 0 2px rgba(109, 40, 217, 0.12);
+  border-color: #1d4ed8;
+  box-shadow: 0 0 0 2px rgba(29, 78, 216, 0.12);
 }
 
 .member-tag {
@@ -680,33 +680,33 @@ body {
   background-color: white;
 }
 
-/* ---- الحلقات العلمية: violet identity on the printed page -----------------
+/* ---- الحلقات العلمية: blue identity on the printed page ------------------
    Colours are literal hex, not var() overrides: html2canvas does not reliably
    resolve custom properties when rasterising the preview for export. */
 
 .circles-page .doc-header {
-  border-bottom: 3px solid #6d28d9;
+  border-bottom: 3px solid #1d4ed8;
 }
 
 .circles-page .doc-title h1 {
-  color: #5b21b6;
+  color: #1e40af;
 }
 
 .circles-page .info-box {
-  background-color: #f5f3ff;
-  border-color: #6d28d9;
+  background-color: #eff6ff;
+  border-color: #1d4ed8;
 }
 
 .circles-page .info-box h2 {
-  color: #5b21b6;
+  color: #1e40af;
 }
 
 .circles-page .info-item span:first-child {
-  color: #6d28d9;
+  color: #1d4ed8;
 }
 
 .circles-table th {
-  background-color: #6d28d9;
+  background-color: #1d4ed8;
 }
 
 .circles-table .circle-col-head {
@@ -714,16 +714,16 @@ body {
 }
 
 .circles-table .date-cell {
-  background-color: #f5f3ff;
-  color: #5b21b6;
+  background-color: #eff6ff;
+  color: #1e40af;
 }
 
 .circles-table .date-cell .day {
-  color: #5b21b6;
+  color: #1e40af;
 }
 
 .circles-table tr:nth-child(even) {
-  background-color: #faf5ff;
+  background-color: #f5f9ff;
 }
 
 .circle-cell {
@@ -732,7 +732,7 @@ body {
 
 .cell-lesson {
   font-weight: 700;
-  color: #3b0764;
+  color: #1e3a8a;
   font-size: 10pt;
   line-height: 1.5;
   /* Preserves the spaces and blank lines the editor lets people type. */
@@ -750,9 +750,9 @@ body {
 
 .cell-chip {
   display: inline-block;
-  background-color: #ede9fe;
-  color: #5b21b6;
-  border: 1px solid #ddd6fe;
+  background-color: #dbeafe;
+  color: #1e40af;
+  border: 1px solid #bfdbfe;
   border-radius: 999px;
   padding: 1px 9px;
   font-size: 8.5pt;
@@ -762,7 +762,7 @@ body {
 }
 
 .circle-cell.is-empty {
-  color: #c4b5fd;
+  color: #93c5fd;
   font-size: 11pt;
 }
 
