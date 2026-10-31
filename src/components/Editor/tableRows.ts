@@ -20,7 +20,8 @@ export function renderTableRowsEditor(
   rows: TableRow[],
   _onChange: () => void,
   planningMode?: PlanningMode,
-  columns: readonly CircleColumn[] = []
+  columns: readonly CircleColumn[] = [],
+  showMaghrib = false
 ): string {
   const config = getDocTypeConfig(type);
   const isWeekly = planningMode === 'weekly';
@@ -53,7 +54,7 @@ export function renderTableRowsEditor(
           case 'cleaning':
             return renderCleaningRow(row as CleaningRow, index, rowTitle, controls, dayDateFields);
           case 'prayer':
-            return renderPrayerRow(row as PrayerRow, index, rowTitle, controls, dayDateFields);
+            return renderPrayerRow(row as PrayerRow, index, rowTitle, controls, dayDateFields, showMaghrib);
           case 'circles':
             return renderCircleRow(row as CircleRow, index, columns, rowTitle, controls, dayDateFields);
           default:
@@ -134,10 +135,12 @@ function renderPrayerRow(
   index: number,
   rowTitle: string,
   controls: string,
-  dayDateFields: string
+  dayDateFields: string,
+  showMaghrib: boolean
 ): string {
   const zuhr = normaliseSlot(row.zuhr);
   const asr = normaliseSlot(row.asr);
+  const maghrib = normaliseSlot(row.maghrib);
 
   return `
     <div class="table-row-editor">
@@ -166,6 +169,20 @@ function renderPrayerRow(
         <label>العصر - المؤذن</label>
         <input type="text" value="${escapeHtml(asr.muezzin)}" oninput="window.app.updatePrayerSlot(${index}, 'asr', 'muezzin', this.value)">
       </div>
+      ${
+        showMaghrib
+          ? `
+      <div class="form-group maghrib-field">
+        <label>المغرب - الإمام</label>
+        <input type="text" value="${escapeHtml(maghrib.imam)}" oninput="window.app.updatePrayerSlot(${index}, 'maghrib', 'imam', this.value)">
+      </div>
+      <div class="form-group maghrib-field">
+        <label>المغرب - المؤذن</label>
+        <input type="text" value="${escapeHtml(maghrib.muezzin)}" oninput="window.app.updatePrayerSlot(${index}, 'maghrib', 'muezzin', this.value)">
+      </div>
+      `
+          : ''
+      }
       <div class="form-group">
         <label>الغلق</label>
         <input type="text" value="${escapeHtml(row.closing ?? '')}" oninput="window.app.updateTableRowField(${index}, 'closing', this.value)">

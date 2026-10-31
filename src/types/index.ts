@@ -46,6 +46,12 @@ export interface PrayerRow {
   opening: string;
   zuhr: PrayerTimeSlot;
   asr: PrayerTimeSlot;
+  /**
+   * Only rendered when {@link PrayerDocument.showMaghrib} is on. Kept on the row
+   * rather than dropped when the column is hidden, so toggling it off and back
+   * on does not lose what was typed.
+   */
+  maghrib: PrayerTimeSlot;
   closing: string;
 }
 
@@ -98,6 +104,8 @@ export interface PrayerDocument extends DocumentBase {
   type: 'prayer';
   infoBox: PrayerInfoBox;
   tableRows: PrayerRow[];
+  /** Whether the optional المغرب column is shown in the table. */
+  showMaghrib: boolean;
 }
 
 export interface CirclesDocument extends DocumentBase {

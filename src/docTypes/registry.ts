@@ -179,9 +179,11 @@ const prayerConfig: DocTypeConfig = {
           opening: '',
           zuhr: { imam: '', muezzin: '' },
           asr: { imam: '', muezzin: '' },
+          maghrib: { imam: '', muezzin: '' },
           closing: ''
         } satisfies PrayerRow
       ],
+      showMaghrib: false,
       footerNotes: [
         {
           title: 'ملاحظة مهمة',
@@ -200,6 +202,7 @@ const prayerConfig: DocTypeConfig = {
       opening: '',
       zuhr: { imam: '', muezzin: '' },
       asr: { imam: '', muezzin: '' },
+      maghrib: { imam: '', muezzin: '' },
       closing: ''
     };
   },
@@ -211,7 +214,9 @@ const prayerConfig: DocTypeConfig = {
         prayer.zuhr?.imam ||
         prayer.zuhr?.muezzin ||
         prayer.asr?.imam ||
-        prayer.asr?.muezzin
+        prayer.asr?.muezzin ||
+        prayer.maghrib?.imam ||
+        prayer.maghrib?.muezzin
     );
   }
 };
