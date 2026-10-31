@@ -1,4 +1,12 @@
-import type { CircleRow, CirclesDocument, DocumentData, DocumentType, PlanningMode } from '../types';
+import type {
+  CircleRow,
+  CirclesDocument,
+  DocumentData,
+  DocumentType,
+  PlanningMode,
+  PrayerDocument,
+  PrayerRow
+} from '../types';
 import { createDefaultColumns, isDocType, syncRowCells } from '../docTypes/registry';
 
 const TYPE_KEY = 'documentType';
@@ -58,6 +66,23 @@ function migrate(parsed: DocumentData, type: DocumentType): DocumentData {
     }
     for (const row of circles.tableRows as CircleRow[]) {
       syncRowCells(row, circles.columns);
+    }
+  }
+
+  if (type === 'prayer') {
+    // Payloads saved before the optional المغرب column existed have neither the
+    // toggle nor the per-row slot. Default the toggle off so the printed table
+    // is unchanged, and give every row an empty slot ready for when it's turned
+    // on — that way nothing is silently dropped while the column is hidden.
+    const prayer = doc as unknown as PrayerDocument;
+    prayer.showMaghrib = prayer.showMaghrib === true;
+    for (const row of prayer.tableRows as PrayerRow[]) {
+      if (!row.maghrib || typeof row.maghrib !== 'object') {
+        row.maghrib = { imam: '', muezzin: '' };
+      } else {
+        row.maghrib.imam ??= '';
+        row.maghrib.muezzin ??= '';
+      }
     }
   }
 

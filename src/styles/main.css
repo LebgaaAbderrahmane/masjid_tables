@@ -950,6 +950,43 @@ body {
   color: var(--primary);
 }
 
+/* Optional المغرب column toggle. Prayer's identity is navy, so the checked
+   state follows that rather than the cleaning green. */
+.maghrib-toggle {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 15px;
+  padding: 10px;
+  border: 2px solid var(--border);
+  border-radius: 8px;
+  background: white;
+  cursor: pointer;
+  font-size: 14px;
+  font-weight: 600;
+  color: #555;
+  transition: all 0.3s;
+  user-select: none;
+}
+
+.maghrib-toggle:hover {
+  border-color: var(--secondary);
+  color: var(--secondary);
+}
+
+.maghrib-toggle input {
+  width: 16px;
+  height: 16px;
+  accent-color: var(--secondary);
+  cursor: pointer;
+}
+
+.maghrib-toggle.checked {
+  background: #e8ecf7;
+  border-color: var(--secondary);
+  color: var(--secondary);
+}
+
 .date-range-picker {
   display: flex;
   gap: 8px;

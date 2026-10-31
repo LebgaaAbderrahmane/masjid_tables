@@ -62,7 +62,8 @@ export function renderTable(
   type: DocumentType,
   rows: TableRow[],
   planningMode?: PlanningMode,
-  columns: readonly CircleColumn[] = []
+  columns: readonly CircleColumn[] = [],
+  showMaghrib = false
 ): string {
   const isWeekly = planningMode === 'weekly';
 
@@ -70,7 +71,7 @@ export function renderTable(
     case 'cleaning':
       return renderCleaningTable(rows, isWeekly);
     case 'prayer':
-      return renderPrayerTable(rows, isWeekly);
+      return renderPrayerTable(rows, isWeekly, showMaghrib);
     case 'circles':
       return renderCirclesTable(rows, columns, isWeekly);
     default:
@@ -205,18 +206,28 @@ function renderCleaningTable(rows: TableRow[], isWeekly: boolean): string {
   `;
 }
 
-function renderPrayerTable(rows: TableRow[], isWeekly: boolean): string {
+function renderPrayerTable(rows: TableRow[], isWeekly: boolean, showMaghrib: boolean): string {
   const prayerRows = rows as PrayerRow[];
+
+  // Widths are spread across whatever columns are actually shown, so the
+  // table still fills the page whether or not المغرب is included. The
+  // remainder is handed to the last column so the total lands exactly on 100.
+  const fixedWidth = 12;
+  // الفتح + الظهر + العصر (+ المغرب) + الغلق
+  const sideCols = showMaghrib ? 5 : 4;
+  const sideWidth = Math.floor((100 - fixedWidth) / sideCols);
+  const closingWidth = 100 - fixedWidth - sideWidth * (sideCols - 1);
 
   return `
     <table class="doc-table">
       <thead>
         <tr>
-          <th style="width: 12%">${isWeekly ? 'اليوم' : 'التاريخ'}</th>
-          <th style="width: 20%">الفتح</th>
-          <th style="width: 22%">الظهر</th>
-          <th style="width: 22%">العصر</th>
-          <th style="width: 22%">الغلق</th>
+          <th style="width: ${fixedWidth}%">${isWeekly ? 'اليوم' : 'التاريخ'}</th>
+          <th style="width: ${sideWidth}%">الفتح</th>
+          <th style="width: ${sideWidth}%">الظهر</th>
+          <th style="width: ${sideWidth}%">العصر</th>
+          ${showMaghrib ? `<th style="width: ${sideWidth}%">المغرب</th>` : ''}
+          <th style="width: ${closingWidth}%">الغلق</th>
         </tr>
       </thead>
       <tbody>
@@ -231,6 +242,7 @@ function renderPrayerTable(rows: TableRow[], isWeekly: boolean): string {
             <td>${renderMultipleNames(row.opening)}</td>
             <td>${renderSlot(row.zuhr)}</td>
             <td>${renderSlot(row.asr)}</td>
+            ${showMaghrib ? `<td>${renderSlot(row.maghrib)}</td>` : ''}
             <td>${renderMultipleNames(row.closing)}</td>
           </tr>
         `

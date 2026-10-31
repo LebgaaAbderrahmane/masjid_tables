@@ -197,7 +197,7 @@ export class App {
 
   updatePrayerSlot(
     rowIndex: number,
-    slot: 'zuhr' | 'asr',
+    slot: 'zuhr' | 'asr' | 'maghrib',
     role: 'imam' | 'muezzin',
     value: string
   ): void {
@@ -268,6 +268,19 @@ export class App {
   setPlanningMode(mode: 'period' | 'weekly'): void {
     if (!this.documentData) return;
     this.documentData.planningMode = mode;
+    this.renderAll();
+  }
+
+  /**
+   * Shows or hides the optional المغرب column. The per-row data is left
+   * untouched, so switching it off and back on keeps whatever was typed.
+   */
+  toggleMaghrib(show: boolean): void {
+    const doc = this.documentData;
+    if (!doc || doc.type !== 'prayer') return;
+
+    doc.showMaghrib = show;
+    // The editor gains or loses two fields per row, so re-render it too.
     this.renderAll();
   }
 
@@ -507,7 +520,8 @@ export class App {
     const tableRowsEditor = document.getElementById('tableRowsEditor');
     if (tableRowsEditor) {
       const columns = doc.type === 'circles' ? doc.columns : [];
-      tableRowsEditor.innerHTML = renderTableRowsEditor(type, doc.tableRows, () => this.renderPreview(), doc.planningMode, columns);
+      const showMaghrib = doc.type === 'prayer' ? doc.showMaghrib : false;
+      tableRowsEditor.innerHTML = renderTableRowsEditor(type, doc.tableRows, () => this.renderPreview(), doc.planningMode, columns, showMaghrib);
     }
 
     const footerNotesEditor = document.getElementById('footerNotesEditor');
@@ -523,12 +537,23 @@ export class App {
     if (!doc) return '';
 
     const mode = doc.planningMode ?? 'period';
+    const showMaghrib = doc.type === 'prayer' ? doc.showMaghrib : false;
 
     return `
       <div class="cleaning-mode-toggle">
         <button class="mode-btn ${mode === 'period' ? 'active' : ''}" onclick="window.app.setPlanningMode('period')">📅 برنامج بمدة</button>
         <button class="mode-btn ${mode === 'weekly' ? 'active' : ''}" onclick="window.app.setPlanningMode('weekly')">📋 برنامج أسبوعي</button>
       </div>
+      ${
+        doc.type === 'prayer'
+          ? `
+        <label class="maghrib-toggle ${showMaghrib ? 'checked' : ''}">
+          <input type="checkbox" ${showMaghrib ? 'checked' : ''} onchange="window.app.toggleMaghrib(this.checked)">
+          إظهار عمود المغرب
+        </label>
+      `
+          : ''
+      }
       ${
         mode === 'period'
           ? `
@@ -610,10 +635,11 @@ export class App {
     page.className = `a4-page ${config.pageClass}`;
 
     const columns = doc.type === 'circles' ? doc.columns : [];
+    const showMaghrib = doc.type === 'prayer' ? doc.showMaghrib : false;
 
     let html = renderDocHeader(doc.header);
     html += renderInfoBox(type, doc.infoBox);
-    html += renderTable(type, doc.tableRows, doc.planningMode, columns);
+    html += renderTable(type, doc.tableRows, doc.planningMode, columns, showMaghrib);
     html += renderFooter(doc.footerNotes);
 
     page.innerHTML = html;
@@ -815,6 +841,8 @@ export class App {
       add(row.zuhr?.muezzin);
       add(row.asr?.imam);
       add(row.asr?.muezzin);
+      add(row.maghrib?.imam);
+      add(row.maghrib?.muezzin);
       for (const name of (row.closing ?? '').split(' ')) add(name);
     }
 
@@ -1030,6 +1058,9 @@ export class App {
           opening: normalizeNames(row[1]),
           zuhr: parsePrayerSlot(row[2]),
           asr: parsePrayerSlot(row[3]),
+          // The import format has no column for المغرب; seed an empty slot so
+          // the row is complete if the column is switched on later.
+          maghrib: { imam: '', muezzin: '' },
           closing: normalizeNames(row[4])
         };
       })
